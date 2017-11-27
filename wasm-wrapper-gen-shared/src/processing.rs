@@ -61,7 +61,7 @@ impl JsFnInfo {
     }
 }
 
-static TRANSFORMED_FUNC_PREFX: &'static str = "__js_fn";
+static TRANSFORMED_FUNC_PREFX: &'static str = "__js_fn_";
 
 #[derive(Debug, Clone)]
 pub struct TransformedRustIdent<T> {

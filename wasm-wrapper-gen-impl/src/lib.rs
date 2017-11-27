@@ -124,7 +124,9 @@ fn generate_function_wrapper(
     }
 
     let full_definition = quote! {
-        extern "C" fn #func_ident (#real_arguments_list) {
+        #[no_mangle]
+        #[doc(hidden)]
+        pub extern "C" fn #func_ident (#real_arguments_list) {
             #function_body
         }
     };

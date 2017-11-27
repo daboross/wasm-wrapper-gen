@@ -44,7 +44,7 @@ where
     Ok(())
 }
 
-pub fn translate_source(source: &str, js_class_name: &str) -> Result<String, Error> {
+fn translate_source(source: &str, js_class_name: &str) -> Result<String, Error> {
     let func_definition_items = source_searching::walk_crate_for_js_fns(source)?;
 
     let js_fn_infos = func_definition_items

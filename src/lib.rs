@@ -11,11 +11,13 @@ proc_macro_item_decl! {
     js_fn! => __js_fn_impl
 }
 
-mod extern_definitions {
+#[doc(hidden)]
+pub mod _extern_definitions {
     use std::mem;
 
     #[allow(non_snake_case)]
-    unsafe extern "C" fn __js_fn___builtin_alloc(len: usize) -> *mut u8 {
+    #[no_mangle]
+    pub unsafe extern "C" fn __js_fn__builtin_alloc(len: usize) -> *mut u8 {
         let memory = Vec::<u8>::with_capacity(len);
 
         let ptr = memory.as_slice().as_ptr() as *mut u8;
@@ -26,7 +28,8 @@ mod extern_definitions {
     }
 
     #[allow(non_snake_case)]
-    unsafe extern "C" fn __js_fn__builtin_dealloc(ptr: *mut u8, len: usize) {
+    #[no_mangle]
+    pub unsafe extern "C" fn __js_fn__builtin_dealloc(ptr: *mut u8, len: usize) {
         if len == 0 {
             return;
         }
