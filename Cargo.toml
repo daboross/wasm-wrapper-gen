@@ -1,0 +1,8 @@
+[package]
+name = "wasm-wrapper-gen"
+version = "0.0.1"
+authors = ["David Ross <daboross@daboross.net>"]
+
+[dependencies]
+proc-macro-hack = "0.4"
+wasm-wrapper-gen-impl = { version = "0.0.1", path = "wasm-wrapper-gen-impl" }

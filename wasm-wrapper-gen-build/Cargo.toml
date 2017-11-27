@@ -1,0 +1,11 @@
+[package]
+name = "wasm-wrapper-gen-build"
+version = "0.0.1"
+authors = ["David Ross <daboross@daboross.net>"]
+
+[dependencies]
+wasm-wrapper-gen-shared = { version = "0.0.1", path = "../wasm-wrapper-gen-shared" }
+syn = { version = "0.11", features = ["full"] }
+quote = "0.3"
+failure = "0.1.0"
+arrayvec = "0.4"
