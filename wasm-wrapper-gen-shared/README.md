@@ -1,7 +1,7 @@
 wasm-wrapper-gen-shared
 ======================
 
-wasm-wrapper-gen: JavaScript-wrapper generation for rust code targetting wasm32-unknown-unknown.
+`wasm-wrapper-gen` provides JavaScript-wrapper generation for rust code targeting wasm32-unknown-unknown.
 
 `wasm-wrapper-gen` is composed of two parts: a procedural macro to generate `extern "C"` functions with appropriate
 parameters, and a build script which scrapes the source for instances of that macro and generates JavaScript bindings

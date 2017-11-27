@@ -1,7 +1,7 @@
 wasm-wrapper-gen-impl
 ======================
 
-wasm-wrapper-gen: JavaScript-wrapper generation for rust code targetting wasm32-unknown-unknown.
+`wasm-wrapper-gen` provides JavaScript wrapper generation for rust code targeting wasm32-unknown-unknown.
 
 `wasm-wrapper-gen-impl` is a backend crate which supports `wasm-wrapper-gen`. It implements the internals of the
 `js_fn!()` procedural macro.

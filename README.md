@@ -1,7 +1,7 @@
 wasm-wrapper-gen
 ================
 
-JavaScript-wrapper generation for rust code targetting wasm32-unknown-unknown.
+JavaScript wrapper generation for rust code targeting wasm32-unknown-unknown.
 
 This repository is currently very WIP, but there's a full working example Cargo project in `examples/simple_summation/`.
 

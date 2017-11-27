@@ -2,7 +2,7 @@
 name = "wasm-wrapper-gen"
 version = "0.0.1"
 authors = ["David Ross <daboross@daboross.net>"]
-description = "JavaScript-wrapper generation for rust code targetting wasm32-unknown-unknown"
+description = "JavaScript wrapper generation for rust code targeting wasm32-unknown-unknown"
 
 repository = "https://github.com/daboross/wasm-wrapper-gen"
 readme = "README.md"
