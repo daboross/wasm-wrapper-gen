@@ -7,5 +7,5 @@ wasm-wrapper-gen-build
 a source file into a JavaScript file containing bindings to all functions exported using `wasm-wrapper-gen`.
 
 See `wasm-wrapper-gen` for more information:
-- [`wasm-wrapper-gen` on crates.io](https://crates.io/crate/wasm-wrapper-gen/)
+- [`wasm-wrapper-gen` on crates.io](https://crates.io/crates/wasm-wrapper-gen/)
 - [`wasm-wrapper-gen` on github](https://github.com/daboross/wasm-wrapper-gen)
