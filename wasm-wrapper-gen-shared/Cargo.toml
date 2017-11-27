@@ -2,10 +2,16 @@
 name = "wasm-wrapper-gen-shared"
 version = "0.0.1"
 authors = ["David Ross <daboross@daboross.net>"]
+description = "Backend implementation details of wasm-wrapper-gen"
+
+repository = "https://github.com/daboross/wasm-wrapper-gen"
+readme = "README.md"
+
+license = "MIT"
 
 [dependencies]
 proc-macro-hack = "0.4"
 syn = { version = "0.11", features = ["full"] }
 quote = "0.3"
-failure = "0.1.0"
-failure_derive = "0.1.0"
+failure = "0.1"
+failure_derive = "0.1"

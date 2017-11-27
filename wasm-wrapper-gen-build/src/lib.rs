@@ -1,6 +1,5 @@
 #[macro_use]
 extern crate failure;
-extern crate quote;
 extern crate syn;
 extern crate wasm_wrapper_gen_shared;
 
