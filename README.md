@@ -13,6 +13,22 @@ General overview:
 
 Note: this assumes little-endian hardware (the majority of modern hardware).
 
+### Currently supported:
+
+- Argument types:
+  - `u8`, `u16`, `u32`, `usize`, `i8`, `i16`, `i32`, `isize`
+  - `&[_]`, `&mut [_]`, `Vec<_>` wrapping any of the above
+- Return types:
+  - `u8`, `u16`, `u32`, `usize`, `i8`, `i16`, `i32`, `isize`
+  - `Vec<_>` wrapping the above
+- Full memory freeing for all allocated types as long as the rust
+  function doesn't panic
+
+### Unimplemented:
+
+- Arbitrary argument types implementing some serialization trait
+- struct / struct method wrapping in JavaScript classes
+
 ### Example usage:
 
 `main.rs`:
@@ -20,8 +36,7 @@ Note: this assumes little-endian hardware (the majority of modern hardware).
 ```rust
 
 fn sum(input: &[i32]) -> i32 {
-    let sum: i32 = input.iter().map(|&x| x as i32).sum();
-    sum
+    input.iter().cloned().sum()
 }
 
 // macro provided by wasm-wrapper-gen

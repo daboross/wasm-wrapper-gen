@@ -11,8 +11,9 @@ extern crate wasm_wrapper_gen_shared;
 
 use failure::{Error, ResultExt};
 
-use wasm_wrapper_gen_shared::{SupportedArgumentType,SupportedRetType, TransformedRustIdent,
-    extract_func_info, get_argument_types, get_ret_type,                              transform_macro_input_to_items};
+use wasm_wrapper_gen_shared::{extract_func_info, get_argument_types, get_ret_type,
+                              transform_macro_input_to_items, SupportedArgumentType,
+                              SupportedRetType, TransformedRustIdent};
 
 
 #[derive(Debug, Clone)]
@@ -159,7 +160,8 @@ fn expand_argument_into(
                 #length_arg_name: usize,
             });
         }
-        SupportedArgumentType::IntegerSliceMutRef(int_ty) | SupportedArgumentType::IntegerVec(int_ty) => {
+        SupportedArgumentType::IntegerSliceMutRef(int_ty)
+        | SupportedArgumentType::IntegerVec(int_ty) => {
             let ptr_arg_name = arg_name.with_suffix("_ptr");
             let length_arg_name = arg_name.with_suffix("_len");
             tokens.append(quote! {
@@ -167,11 +169,9 @@ fn expand_argument_into(
                 #length_arg_name: usize,
             });
         }
-        SupportedArgumentType::Integer(int_ty) => {
-            tokens.append(quote! {
-                #arg_name: #int_ty,
-            })
-        }
+        SupportedArgumentType::Integer(int_ty) => tokens.append(quote! {
+            #arg_name: #int_ty,
+        }),
     }
 
     Ok(())
@@ -222,7 +222,8 @@ fn setup_for_argument(
             let length_arg_name = arg_name.with_suffix("_len");
             quote! {
                 let #arg_name: Vec<#int_ty> = unsafe {
-                    ::std::vec::Vec::from_raw_parts(#ptr_arg_name, #length_arg_name, #length_arg_name)
+                    ::std::vec::Vec::from_raw_parts(#ptr_arg_name,
+                        #length_arg_name, #length_arg_name)
                 };
             }
         }
