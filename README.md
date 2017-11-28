@@ -26,8 +26,18 @@ Note: this assumes little-endian hardware (the majority of modern hardware).
 
 ### Unimplemented:
 
-- Arbitrary argument types implementing some serialization trait
-- struct / struct method wrapping in JavaScript classes
+- Next to do:
+  - Add options to build script JS generation
+    - Add support for making an async constructor rather than sync one.
+    - Add support for using DataView rather than (U)int*Array structures in order
+      to allow for big-endian machines
+  - Add support for 'bool' as a simple integer type and test boolean parameters, return types, and arrays
+
+- Further future:
+  - Make real tests and figure out how to do a build.rs script which only runs for tests
+  - Arbitrary argument types implementing some serialization trait
+  - Macro to wrap individual structs in separate JavaScript classes
+    which all reference the same WebAssembly.Instance
 
 ### Example usage:
 
