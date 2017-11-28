@@ -2,11 +2,9 @@ use std::fmt;
 
 use {quote, syn};
 
-use failure::Error;
-
 use MacroError;
 
-use arguments::KnownArgumentType;
+use types::{SupportedArgumentType, SupportedRetType};
 
 pub fn extract_func_info(
     item: &syn::Item,
@@ -19,7 +17,7 @@ pub fn extract_func_info(
     }
 }
 
-pub fn get_argument_types(decl: &syn::FnDecl) -> Result<Vec<KnownArgumentType>, MacroError> {
+pub fn get_argument_types(decl: &syn::FnDecl) -> Result<Vec<SupportedArgumentType>, MacroError> {
     Ok(decl.inputs
         .iter()
         .map(|input| match *input {
@@ -29,28 +27,34 @@ pub fn get_argument_types(decl: &syn::FnDecl) -> Result<Vec<KnownArgumentType>, 
             syn::FnArg::Captured(_, ref ty) | syn::FnArg::Ignored(ref ty) => Ok(ty.clone()),
         })
         .map(|ty_result| {
-            ty_result.and_then(|ty| KnownArgumentType::new(&ty))
+            ty_result.and_then(|ty| SupportedArgumentType::new(&ty))
         })
         .collect::<Result<_, _>>()?)
 }
 
+pub fn get_ret_type(decl: &syn::FnDecl) -> Result<SupportedRetType, MacroError> {
+    match decl.output {
+        syn::FunctionRetTy::Default => Ok(SupportedRetType::unit()),
+        syn::FunctionRetTy::Ty(ref ty) => SupportedRetType::new(ty),
+    }
+}
 
 // TODO: find and store doc-comments in here for use in generating JS code comments.
 pub struct JsFnInfo {
     pub rust_name: String,
-    pub args_ty: Vec<KnownArgumentType>,
-    pub ret_ty: syn::Ty,
+    pub args_ty: Vec<SupportedArgumentType>,
+    pub ret_ty: SupportedRetType,
 }
 
 
 impl JsFnInfo {
-    pub fn try_from(item: &syn::Item) -> Result<Self, Error> {
+    pub fn try_from(item: &syn::Item) -> Result<Self, MacroError> {
         let (item, decl, _) = extract_func_info(item)?;
 
         let argument_types = get_argument_types(decl)?;
         let ret_ty = match decl.output {
-            syn::FunctionRetTy::Default => syn::Ty::Tup(Vec::new()),
-            syn::FunctionRetTy::Ty(ref ty) => ty.clone(),
+            syn::FunctionRetTy::Default => SupportedRetType::unit(),
+            syn::FunctionRetTy::Ty(ref ty) => SupportedRetType::new(ty)?,
         };
 
         Ok(JsFnInfo {

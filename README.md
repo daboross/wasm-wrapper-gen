@@ -11,21 +11,22 @@ General overview:
 - `wasm-wrapper-gen` provides the `js_fn!()` macro which generates `extern "C"` functions
 - `wasm-wrapper-gen-build` is a build-script utility which scrapes the source for usages of `js_fn!()` and generates a JavaScript file which binds to those exported functions.
 
+Note: this assumes little-endian hardware (the majority of modern hardware).
 
 ### Example usage:
 
 `main.rs`:
 
 ```rust
-// return values not yet supported
-fn sum(input: &[u8], output: &mut [u8]) {
-    let sum = input.iter().cloned().sum();
-    output[0] = sum;
+
+fn sum(input: &[i32]) -> i32 {
+    let sum: i32 = input.iter().map(|&x| x as i32).sum();
+    sum
 }
 
 // macro provided by wasm-wrapper-gen
 js_fn! {
-    fn sum(_: &[u8], _: &mut [u8]) => sum;
+    fn sum(input: &[i32]) -> i32 => sum;
 }
 ```
 
@@ -75,14 +76,11 @@ function main() {
 
     let instance = new SimpleSummation(module);
 
-    console.log(instance._mod.exports);
-
     let input = [1, 2, 3, 4, 5];
-    // hack since we don't support return arguments natively yet.
-    let output = [0];
 
-    instance.sum(input, output);
-    console.log(`sum of ${input}: ${output[0]}`);
+    let output = instance.sum(input);
+
+    console.log(`sum of ${input}: ${output}`);
 }
 
 main();

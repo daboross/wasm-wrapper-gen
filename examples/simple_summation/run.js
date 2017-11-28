@@ -8,14 +8,17 @@ function main() {
 
     let instance = new SimpleSummation(module);
 
-    console.log(instance._mod.exports);
-
     let input = [1, 2, 3, 4, 5];
-    // hack since we don't support return arguments natively yet.
-    let output = [0];
 
-    instance.sum(input, output);
-    console.log(`sum of ${input}: ${output[0]}`);
+    let output = instance.sum(input);
+    console.log(`sum of ${input}: ${output}`);
+
+    let in_place_input = [1, 2, 3, 4, 5];
+    instance.product_in_place(in_place_input);
+    console.log(`[1, 2, 3, 4, 5] * 2 in place: ${in_place_input}`);
+
+    let new_output = instance.product_new([1, 2, 3, 4, 5]);
+    console.log(`[1, 2, 3, 4, 5] * 2 created new: ${new_output}`);
 }
 
 main();

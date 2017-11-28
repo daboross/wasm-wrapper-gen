@@ -2,7 +2,8 @@ use std::fmt::Write;
 
 use failure::Error;
 
-use wasm_wrapper_gen_shared::{JsFnInfo, KnownArgumentType, TransformedRustIdent};
+use wasm_wrapper_gen_shared::{JsFnInfo, SimpleIntegerTy, SupportedArgumentType, SupportedRetType,
+                              TransformedRustIdent};
 
 use self::indented_write::WriteExt;
 
@@ -96,15 +97,11 @@ where
 {
     write!(buf, "\n{}(", info.rust_name)?;
     let mut first_iteration = true;
-    for (i, arg) in info.args_ty.iter().enumerate() {
+    for i in 0..info.args_ty.len() {
         if !first_iteration {
             write!(buf, ", ")?;
         }
-        match *arg {
-            KnownArgumentType::U8SliceRef | KnownArgumentType::U8SliceMutRef => {
-                write!(buf, "arg{}", i)?;
-            }
-        }
+        write!(buf, "arg{}", i)?;
         first_iteration = false;
     }
     write!(buf, ") {{\n")?;
@@ -114,10 +111,22 @@ where
         // argument testing
         for (i, ty) in info.args_ty.iter().enumerate() {
             match *ty {
-                KnownArgumentType::U8SliceRef | KnownArgumentType::U8SliceMutRef => {
+                SupportedArgumentType::IntegerSliceRef(_)
+                | SupportedArgumentType::IntegerSliceMutRef(_)
+                | SupportedArgumentType::IntegerVec(_) => {
                     write!(
                         buf,
                         r#"if (arg{0} == null || isNaN(arg{0}.length)) {{
+    throw new Error();
+}}
+"#,
+                        i
+                    )?;
+                }
+                SupportedArgumentType::Integer(_) => {
+                    write!(
+                        buf,
+                        r#"if (isNaN(arg{0})) {{
     throw new Error();
 }}
 "#,
@@ -129,18 +138,42 @@ where
         // allocation
         for (i, ty) in info.args_ty.iter().enumerate() {
             match *ty {
-                KnownArgumentType::U8SliceRef | KnownArgumentType::U8SliceMutRef => {
-                    // store length in temp variable
-                    write!(buf, "let arg{0}_len = arg{0}.length;\n", i)?;
-                    // allocate memory
-                    write!(buf, "let arg{0}_ptr = this._alloc(arg{0}_len);\n", i)?;
-                    // get a 'view' into the allocated memory, and copy the argument's data into it
-                    write!(
-                        buf,
-                        "this._mem.subarray(arg{0}_ptr, arg{0}_ptr + arg{0}_len).set(arg{0});\n",
-                        i
-                    )?;
+                SupportedArgumentType::IntegerSliceRef(int_ty)
+                | SupportedArgumentType::IntegerSliceMutRef(int_ty)
+                | SupportedArgumentType::IntegerVec(int_ty) => {
+                    match int_ty {
+                        SimpleIntegerTy::U8 => {
+                            // store length in temp variable
+                            write!(buf, "let arg{0}_len = arg{0}.length;\n", i)?;
+                            // allocate memory
+                            write!(buf, "let arg{0}_ptr = this._alloc(arg{0}_len);\n", i)?;
+                            write!(
+                                buf,
+                                "let arg{0}_view = this._mem.subarray\
+                                 (arg{0}_ptr, arg{0}_ptr + arg{0}_len);\n",
+                                i
+                            )?;
+                            // get a 'view' into the allocated memory
+                            // and copy the argument's data into it
+                            write!(buf, "arg{0}_view.set(arg{0});\n", i)?;
+                        }
+                        _ => {
+                            write!(
+                                buf,
+                                r#"let arg{0}_len = arg{0}.length;
+let arg{0}_byte_len = arg{0}_len * {1};
+let arg{0}_ptr = this._alloc(arg{0}_byte_len);
+let arg{0}_view = new {2}(this._mem.buffer, arg{0}_ptr, arg{0}_byte_len);
+arg{0}_view.set(arg{0});
+"#,
+                                i,
+                                int_ty.size_in_bytes(),
+                                javascript_typed_array_for_int(int_ty)
+                            )?;
+                        }
+                    }
                 }
+                SupportedArgumentType::Integer(_) => {} // no allocation needed for integers.
             }
         }
 
@@ -153,8 +186,13 @@ where
             }
 
             match *ty {
-                KnownArgumentType::U8SliceRef | KnownArgumentType::U8SliceMutRef => {
+                SupportedArgumentType::IntegerSliceRef(_)
+                | SupportedArgumentType::IntegerSliceMutRef(_)
+                | SupportedArgumentType::IntegerVec(_) => {
                     write!(buf, "arg{0}_ptr, arg{0}_len", i)?;
+                }
+                SupportedArgumentType::Integer(_) => {
+                    write!(buf, "arg{0}", i)?;
                 }
             }
             first_iteration = false;
@@ -164,18 +202,15 @@ where
 
         // cleanup (deallocation)
         for (i, ty) in info.args_ty.iter().enumerate() {
+            // copy changes back for mutable references
             match *ty {
-                KnownArgumentType::U8SliceRef => {
-                    write!(buf, "this._dealloc(arg{0}_ptr, arg{0}_len);\n", i)?;
-                }
-                KnownArgumentType::U8SliceMutRef => {
+                SupportedArgumentType::IntegerSliceMutRef(_) => {
                     // propagate modifications outwards.
                     write!(
                         buf,
                         r#"if (typeof arg{0}.set == 'function') {{
-    arg{0}.set(this._mem.subarray(arg{0}_ptr, arg{0}_ptr + arg{0}_len));
+    arg{0}.set(arg{0}_view);
 }} else {{
-    let arg{0}_view = this._mem.subarray(arg{0}_ptr, arg{0}_ptr + arg{0}_len);
     for (var i = 0; i < arg{0}_len; i++) {{
         arg{0}[i] = arg{0}_view[i];
     }}
@@ -183,14 +218,60 @@ where
 "#,
                         i
                     )?;
-                    write!(buf, "this._dealloc(arg{0}_ptr, arg{0}_len);\n", i)?;
                 }
+                SupportedArgumentType::IntegerSliceRef(_)
+                | SupportedArgumentType::IntegerVec(_)
+                | SupportedArgumentType::Integer(_) => {}
+            }
+            // deallocate
+            match *ty {
+                SupportedArgumentType::Integer(_) | SupportedArgumentType::IntegerVec(_) => {}
+                SupportedArgumentType::IntegerSliceRef(int_ty)
+                | SupportedArgumentType::IntegerSliceMutRef(int_ty) => match int_ty {
+                    SimpleIntegerTy::U8 => {
+                        write!(buf, "this._dealloc(arg{0}_ptr, arg{0}_len);\n", i)?;
+                    }
+                    _ => {
+                        write!(buf, "this._dealloc(arg{0}_ptr, arg{0}_byte_len);\n", i)?;
+                    }
+                },
+            }
+        }
+
+        match info.ret_ty {
+            SupportedRetType::Unit => {
+                write!(buf, "return;\n")?;
+            }
+            SupportedRetType::Integer(_) => {
+                write!(buf, "return result;\n")?;
+            }
+            SupportedRetType::IntegerVec(int_ty) => {
+                write!(
+                    buf,
+                    r#"let result_temp_ptr = result;
+let result_temp_len = 3;
+let result_temp_byte_len = result_temp_len * {0};
+let result_temp_view = new {1}(this._mem.buffer, result, result_temp_byte_len);
+let return_ptr = result_temp_view[0];
+let return_len = result_temp_view[1];
+let return_cap = result_temp_view[2];
+let return_byte_len = return_len * {2};
+let return_byte_cap = return_cap * {2};
+let return_value_copy = {3}.from(new {3}(this._mem.buffer, return_ptr, return_byte_len));
+this._dealloc(return_ptr, return_byte_cap);
+this._dealloc(result_temp_ptr, result_temp_byte_len);
+return return_value_copy;
+"#,
+                    SimpleIntegerTy::USize.size_in_bytes(),
+                    javascript_typed_array_for_int(SimpleIntegerTy::USize),
+                    int_ty.size_in_bytes(),
+                    javascript_typed_array_for_int(int_ty)
+                )?;
             }
         }
 
         // TODO: handle return values (we can eventually do this by allocating
         // a Box<(*const ptr, usize)> of memory to store a (ptr, len) for the &[u8] returned)
-        write!(buf, "return null;\n")?;
     }
 
     write!(buf, "}}\n")?;
@@ -274,4 +355,18 @@ mod indented_write {
         }
     }
     impl<T: Write> WriteExt for T {}
+}
+
+fn javascript_typed_array_for_int(ty: SimpleIntegerTy) -> &'static str {
+    use self::SimpleIntegerTy::*;
+    match ty {
+        U8 => "Uint8Array",
+        U16 => "Uint16Array",
+        U32 => "Uint32Array",
+        I8 => "Int8Array",
+        I16 => "Int16Array",
+        I32 => "Int32Array",
+        USize => "Uint32Array",
+        ISize => "Int32Array",
+    }
 }

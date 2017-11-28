@@ -11,9 +11,8 @@ extern crate wasm_wrapper_gen_shared;
 
 use failure::{Error, ResultExt};
 
-use wasm_wrapper_gen_shared::{extract_func_info, get_argument_types,
-                              transform_macro_input_to_items, KnownArgumentType,
-                              TransformedRustIdent};
+use wasm_wrapper_gen_shared::{SupportedArgumentType,SupportedRetType, TransformedRustIdent,
+    extract_func_info, get_argument_types, get_ret_type,                              transform_macro_input_to_items};
 
 
 #[derive(Debug, Clone)]
@@ -95,6 +94,7 @@ fn generate_function_wrapper(
     let callable_body = generate_callable_body(item, decl, code)?;
 
     let argument_types = get_argument_types(decl)?;
+    let ret_ty = get_ret_type(decl)?;
 
     let argument_names = (0..argument_types.len() as u32)
         .map(|index| ConstructedArgIdent::new("__arg", index))
@@ -113,8 +113,10 @@ fn generate_function_wrapper(
 
     function_body.append(quote! {
         // TODO: handle results as well...
-        let __result: () = (#callable_body)(#arg_names_as_argument_list);
+        let result: #ret_ty = (#callable_body)(#arg_names_as_argument_list);
     });
+
+    function_body.append(return_handling(&ret_ty)?);
 
     let func_ident = TransformedRustIdent::new(&item.ident);
 
@@ -123,10 +125,12 @@ fn generate_function_wrapper(
         expand_argument_into(arg_name, ty, &mut real_arguments_list)?;
     }
 
+    let ret_def = WrittenReturnType(ret_ty);
+
     let full_definition = quote! {
         #[no_mangle]
         #[doc(hidden)]
-        pub extern "C" fn #func_ident (#real_arguments_list) {
+        pub extern "C" fn #func_ident (#real_arguments_list) #ret_def {
             #function_body
         }
     };
@@ -143,53 +147,104 @@ fn generate_function_wrapper(
 
 fn expand_argument_into(
     arg_name: &ConstructedArgIdent,
-    ty: &KnownArgumentType,
+    type_type: &SupportedArgumentType,
     tokens: &mut quote::Tokens,
 ) -> Result<(), Error> {
-    match *ty {
-        KnownArgumentType::U8SliceRef => {
+    match *type_type {
+        SupportedArgumentType::IntegerSliceRef(int_ty) => {
             let ptr_arg_name = arg_name.with_suffix("_ptr");
             let length_arg_name = arg_name.with_suffix("_len");
             tokens.append(quote! {
-                #ptr_arg_name: *const u8,
+                #ptr_arg_name: *const #int_ty,
                 #length_arg_name: usize,
             });
         }
-        KnownArgumentType::U8SliceMutRef => {
+        SupportedArgumentType::IntegerSliceMutRef(int_ty) | SupportedArgumentType::IntegerVec(int_ty) => {
             let ptr_arg_name = arg_name.with_suffix("_ptr");
             let length_arg_name = arg_name.with_suffix("_len");
             tokens.append(quote! {
-                #ptr_arg_name: *mut u8,
+                #ptr_arg_name: *mut #int_ty,
                 #length_arg_name: usize,
             });
+        }
+        SupportedArgumentType::Integer(int_ty) => {
+            tokens.append(quote! {
+                #arg_name: #int_ty,
+            })
         }
     }
 
     Ok(())
 }
 
+struct WrittenReturnType(SupportedRetType);
+
+impl quote::ToTokens for WrittenReturnType {
+    fn to_tokens(&self, tokens: &mut quote::Tokens) {
+        match self.0 {
+            SupportedRetType::Unit => (),
+            SupportedRetType::Integer(int_ty) => {
+                tokens.append(quote! { -> #int_ty });
+            }
+            SupportedRetType::IntegerVec(_) => {
+                tokens.append(quote! { -> *const usize });
+            }
+        }
+    }
+}
+
 fn setup_for_argument(
     arg_name: &ConstructedArgIdent,
-    ty: &KnownArgumentType,
+    ty: &SupportedArgumentType,
 ) -> Result<quote::Tokens, Error> {
     let tokens = match *ty {
-        KnownArgumentType::U8SliceRef => {
+        SupportedArgumentType::IntegerSliceRef(int_ty) => {
             // TODO: coordinate _ptr / _len suffixes
             let ptr_arg_name = arg_name.with_suffix("_ptr");
             let length_arg_name = arg_name.with_suffix("_len");
             quote! {
-                let #arg_name = unsafe {
+                let #arg_name: &[#int_ty] = unsafe {
                     ::std::slice::from_raw_parts(#ptr_arg_name, #length_arg_name)
                 };
             }
         }
-        KnownArgumentType::U8SliceMutRef => {
+        SupportedArgumentType::IntegerSliceMutRef(int_ty) => {
             let ptr_arg_name = arg_name.with_suffix("_ptr");
             let length_arg_name = arg_name.with_suffix("_len");
             quote! {
-                let #arg_name = unsafe {
+                let #arg_name: &mut [#int_ty] = unsafe {
                     ::std::slice::from_raw_parts_mut(#ptr_arg_name, #length_arg_name)
                 };
+            }
+        }
+        SupportedArgumentType::IntegerVec(int_ty) => {
+            let ptr_arg_name = arg_name.with_suffix("_ptr");
+            let length_arg_name = arg_name.with_suffix("_len");
+            quote! {
+                let #arg_name: Vec<#int_ty> = unsafe {
+                    ::std::vec::Vec::from_raw_parts(#ptr_arg_name, #length_arg_name, #length_arg_name)
+                };
+            }
+        }
+        SupportedArgumentType::Integer(_) => quote::Tokens::new(), // no setup for simple integers
+    };
+
+    Ok(tokens)
+}
+
+fn return_handling(ty: &SupportedRetType) -> Result<quote::Tokens, Error> {
+    let tokens = match *ty {
+        SupportedRetType::Unit | SupportedRetType::Integer(_) => quote! { result },
+        SupportedRetType::IntegerVec(int_ty) => {
+            quote! {
+                {
+                    let result_ptr = result.as_slice().as_ptr() as *mut #int_ty;
+                    let result_len = result.len();
+                    let result_cap = result.capacity();
+                    let to_return = Box::new([result_ptr as usize, result_len, result_cap]);
+                    ::std::mem::forget(result);
+                    ::std::boxed::Box::into_raw(to_return) as *const usize
+                }
             }
         }
     };
