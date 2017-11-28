@@ -1,6 +1,6 @@
 [package]
 name = "wasm-wrapper-gen"
-version = "0.0.1"
+version = "0.0.2"
 authors = ["David Ross <daboross@daboross.net>"]
 description = "JavaScript wrapper generation for rust code targeting wasm32-unknown-unknown"
 
@@ -13,4 +13,4 @@ categories = ["development-tools::ffi"]
 
 [dependencies]
 proc-macro-hack = "0.4"
-wasm-wrapper-gen-impl = { version = "0.0.1", path = "wasm-wrapper-gen-impl" }
+wasm-wrapper-gen-impl = { version = "0.0.2", path = "wasm-wrapper-gen-impl" }

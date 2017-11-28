@@ -57,10 +57,10 @@ version = "0.1.0"
 authors = ["David Ross <daboross@daboross.net>"]
 
 [dependencies]
-wasm-wrapper-gen = "0.0.1"
+wasm-wrapper-gen = "0.0.2"
 
 [build-dependencies]
-wasm-wrapper-gen-build = "0.0.1"
+wasm-wrapper-gen-build = "0.0.2"
 ```
 
 And finally, usage from within node.js:
