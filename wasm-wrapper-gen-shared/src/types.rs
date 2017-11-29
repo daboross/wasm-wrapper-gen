@@ -6,7 +6,7 @@ use syn;
 
 use MacroError;
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum SimpleIntegerTy {
     U8,
     U16,
@@ -18,6 +18,7 @@ pub enum SimpleIntegerTy {
     // I64, // 64-bit types aren't well supported
     USize,
     ISize,
+    Bool,
 }
 
 impl SimpleIntegerTy {
@@ -34,6 +35,7 @@ impl SimpleIntegerTy {
             // "i64" => Some(I64),
             "usize" => Some(USize),
             "isize" => Some(ISize),
+            "bool" => Some(Bool),
             _ => None,
         }
     }
@@ -52,6 +54,7 @@ impl SimpleIntegerTy {
             // I64 => 8,
             USize => 4,
             ISize => 4,
+            Bool => 1,
         }
     }
 }
@@ -70,6 +73,7 @@ impl AsRef<str> for SimpleIntegerTy {
             // I64 => "i64",
             USize => "usize",
             ISize => "isize",
+            Bool => "bool",
         }
     }
 }

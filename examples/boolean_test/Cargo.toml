@@ -1,0 +1,10 @@
+[package]
+name = "boolean_test"
+version = "0.1.0"
+authors = ["David Ross <daboross@daboross.net>"]
+
+[dependencies]
+wasm-wrapper-gen = { version = "0.0.2", path = "../../" }
+
+[build-dependencies]
+wasm-wrapper-gen-build = { version = "0.0.2", path = "../../wasm-wrapper-gen-build" }

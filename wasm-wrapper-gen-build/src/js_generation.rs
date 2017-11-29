@@ -204,7 +204,7 @@ arg{0}_view.set(arg{0});
         for (i, ty) in info.args_ty.iter().enumerate() {
             // copy changes back for mutable references
             match *ty {
-                SupportedArgumentType::IntegerSliceMutRef(_) => {
+                SupportedArgumentType::IntegerSliceMutRef(int_ty) => {
                     // propagate modifications outwards.
                     write!(
                         buf,
@@ -212,12 +212,15 @@ arg{0}_view.set(arg{0});
     arg{0}.set(arg{0}_view);
 }} else {{
     for (var i = 0; i < arg{0}_len; i++) {{
-        arg{0}[i] = arg{0}_view[i];
-    }}
-}}
-"#,
+        arg{0}[i] = "#,
                         i
                     )?;
+                    if int_ty == SimpleIntegerTy::Bool {
+                        write!(buf, "Boolean(arg{0}_view[i])", i)?;
+                    } else {
+                        write!(buf, "arg{0}_view[i]", i)?;
+                    }
+                    write!(buf, ";\n    }}\n}}")?;
                 }
                 SupportedArgumentType::IntegerSliceRef(_)
                 | SupportedArgumentType::IntegerVec(_)
@@ -242,6 +245,9 @@ arg{0}_view.set(arg{0});
             SupportedRetType::Unit => {
                 write!(buf, "return;\n")?;
             }
+            SupportedRetType::Integer(SimpleIntegerTy::Bool) => {
+                write!(buf, "return Boolean(result);\n")?;
+            }
             SupportedRetType::Integer(_) => {
                 write!(buf, "return result;\n")?;
             }
@@ -256,17 +262,39 @@ let return_ptr = result_temp_view[0];
 let return_len = result_temp_view[1];
 let return_cap = result_temp_view[2];
 let return_byte_len = return_len * {2};
-let return_byte_cap = return_cap * {2};
-let return_value_copy = {3}.from(new {3}(this._mem.buffer, return_ptr, return_byte_len));
+let return_byte_cap = return_cap * {2};"#,
+                    SimpleIntegerTy::USize.size_in_bytes(),
+                    javascript_typed_array_for_int(SimpleIntegerTy::USize),
+                    int_ty.size_in_bytes()
+                )?;
+                match int_ty {
+                    SimpleIntegerTy::Bool => {
+                        write!(
+                            buf,
+                            r#"
+let return_view = new {0}(this._mem.buffer, return_ptr, return_byte_len);
+let return_value_copy = [];
+for (var i = 0; i < return_len; i++) {{
+    return_value_copy.push(Boolean(return_view[i]));
+}}
+return return_value_copy;
+"#,
+                            javascript_typed_array_for_int(int_ty)
+                        )?;
+                    }
+                    _ => {
+                        write!(
+                            buf,
+                            r#"
+let return_value_copy = {0}.from(new {0}(this._mem.buffer, return_ptr, return_byte_len));
 this._dealloc(return_ptr, return_byte_cap);
 this._dealloc(result_temp_ptr, result_temp_byte_len);
 return return_value_copy;
 "#,
-                    SimpleIntegerTy::USize.size_in_bytes(),
-                    javascript_typed_array_for_int(SimpleIntegerTy::USize),
-                    int_ty.size_in_bytes(),
-                    javascript_typed_array_for_int(int_ty)
-                )?;
+                            javascript_typed_array_for_int(int_ty)
+                        )?;
+                    }
+                }
             }
         }
 
@@ -368,5 +396,6 @@ fn javascript_typed_array_for_int(ty: SimpleIntegerTy) -> &'static str {
         I32 => "Int32Array",
         USize => "Uint32Array",
         ISize => "Int32Array",
+        Bool => "Uint8Array", // additional code needed to handle this case
     }
 }
