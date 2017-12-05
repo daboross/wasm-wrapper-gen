@@ -7,9 +7,8 @@ use wasm_wrapper_gen_shared::transform_mac_to_items;
 pub fn walk_crate_for_js_fns(source: &str) -> Result<Vec<syn::Item>, Error> {
     use syn::visit::Visitor;
 
-    let ast = syn::parse_crate(source).map_err(|e| {
-        format_err!("failed to parse macro input as an item: {}", e)
-    })?;
+    let ast = syn::parse_crate(source)
+        .map_err(|e| format_err!("failed to parse macro input as an item: {}", e))?;
 
     let mut v = FindMacrosVisitor::find_js_fn();
 

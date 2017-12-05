@@ -1,14 +1,27 @@
 #!/usr/bin/env node
 const fs = require('fs');
-const SimpleSummation = require('./target/wrapper.js');
+const SimpleSummation1 = require('./target/wrapper.js');
+const SimpleSummation2 = require('./target/wrapper_dataview.js');
 
 function main() {
     let code = fs.readFileSync("target/wasm32-unknown-unknown/release/simple_summation.wasm");
 
     let module = new WebAssembly.Module(code);
 
-    let instance = new SimpleSummation(module);
+    console.log("TypedArray style:");
 
+    let instance1 = new SimpleSummation1(module);
+
+    test(instance1);
+
+    console.log("DataView style:");
+
+    let instance2 = new SimpleSummation2(module);
+
+    test(instance2);
+}
+
+function test(instance) {
     let input = [1, 2, 3, 4, 5];
 
     let output = instance.sum(input);

@@ -1,13 +1,15 @@
-use std::fmt::Write;
+use std::fmt::{self, Display, Write};
 
 use failure::Error;
 
-use wasm_wrapper_gen_shared::{JsFnInfo, SupportedCopyTy, SupportedArgumentType, SupportedRetType,
+use wasm_wrapper_gen_shared::{JsFnInfo, SupportedArgumentType, SupportedCopyTy, SupportedRetType,
                               TransformedRustIdent};
+
+use style::{AccessStyle, Config};
 
 use self::indented_write::WriteExt;
 
-pub fn generate_javascript<'a, 'b, I>(js_class_name: &str, iter: &'a I) -> Result<String, Error>
+pub fn generate_javascript<'a, 'b, I>(config: &Config, iter: &'a I) -> Result<String, Error>
 where
     &'a I: IntoIterator<Item = &'b JsFnInfo> + 'a,
 {
@@ -15,52 +17,68 @@ where
     {
         let buf = &mut output_buffer;
 
-        write_class_definition_up_to_exports_grabbing(buf, js_class_name)?;
+        write_class_definition_up_to_exports_grabbing(config, buf)?;
 
         {
-            let buf = &mut buf.indented(12);
+            let buf = &mut buf.indented(config.indent * 3);
             for info in iter {
                 write_func_unexport(buf, info)?;
             }
         }
 
-        write_class_definition_post_exports_grabbing_up_to_methods(buf)?;
+        write_class_definition_post_exports_grabbing_up_to_methods(config, buf)?;
 
         {
-            let buf = &mut buf.indented(4);
+            let buf = &mut buf.indented(config.indent);
             for info in iter {
-                write_method(buf, info)?;
+                write_method(config, buf, info)?;
             }
         }
 
-        write_class_definition_finish(buf, js_class_name)?;
+        write_class_definition_finish(config, buf)?;
     }
     Ok(output_buffer)
 }
 
 fn write_class_definition_up_to_exports_grabbing<T>(
+    config: &Config,
     buf: &mut T,
-    js_class_name: &str,
 ) -> Result<(), Error>
 where
     T: Write,
 {
-    write!(
-        buf,
-        r#"class {} {{
-    constructor(wasm_module) {{
-        this._mod = new WebAssembly.Instance(wasm_module, {{
-            // TODO: imports
-        }});
-        this._mem = new Uint8Array(this._mod.exports["memory"].buffer);
+    write!(buf, "class {} {{\n", config.class_name)?;
+    {
+        let mut buf = buf.indented(config.indent);
+        write!(buf, "constructor (wasm_module) {{\n")?;
+        {
+            let mut buf = buf.indented(config.indent);
+            write!(
+                buf,
+                "this._mod = new WebAssembly.Instance(wasm_module, {{}});\n"
+            )?;
+            match config.access_style {
+                AccessStyle::TypedArrays => {
+                    write!(buf, "this._mem = this._mod.exports[\"memory\"].buffer;\n")?;
+                }
+                AccessStyle::DataView => {
+                    write!(
+                        buf,
+                        "this._mem = new DataView(this._mod.exports[\"memory\"].buffer);\n"
+                    )?;
+                }
+            }
+            write!(
+                buf,
+                r#"
+this._alloc = this._mod.exports["__js_fn__builtin_alloc"];
+this._dealloc = this._mod.exports["__js_fn__builtin_dealloc"];
 
-        this._alloc = this._mod.exports["__js_fn__builtin_alloc"];
-        this._dealloc = this._mod.exports["__js_fn__builtin_dealloc"];
-
-        this._funcs = {{
-"#,
-        js_class_name
-    )?;
+this._funcs = {{
+"#
+            )?;
+        }
+    }
     Ok(())
 }
 
@@ -78,20 +96,19 @@ where
     Ok(())
 }
 
-fn write_class_definition_post_exports_grabbing_up_to_methods<T>(buf: &mut T) -> Result<(), Error>
+fn write_class_definition_post_exports_grabbing_up_to_methods<T>(
+    config: &Config,
+    buf: &mut T,
+) -> Result<(), Error>
 where
     T: Write,
 {
-    write!(
-        buf,
-        r#"        }};
-    }}
-"#
-    )?;
+    write!(buf.indented(config.indent * 2), "}};\n")?;
+    write!(buf.indented(config.indent), "}}\n")?;
     Ok(())
 }
 
-fn write_method<T>(buf: &mut T, info: &JsFnInfo) -> Result<(), Error>
+fn write_method<T>(config: &Config, buf: &mut T, info: &JsFnInfo) -> Result<(), Error>
 where
     T: Write,
 {
@@ -107,31 +124,21 @@ where
     write!(buf, ") {{\n")?;
 
     {
-        let buf = &mut buf.indented(4);
+        let buf = &mut buf.indented(config.indent);
         // argument testing
         for (i, ty) in info.args_ty.iter().enumerate() {
             match *ty {
                 SupportedArgumentType::IntegerSliceRef(_)
                 | SupportedArgumentType::IntegerSliceMutRef(_)
                 | SupportedArgumentType::IntegerVec(_) => {
-                    write!(
-                        buf,
-                        r#"if (arg{0} == null || isNaN(arg{0}.length)) {{
-    throw new Error();
-}}
-"#,
-                        i
-                    )?;
+                    write!(buf, "if (arg{0} == null || isNaN(arg{0}).length) {{\n", i)?;
+                    write!(buf.indented(config.indent), "throw new Error();\n")?;
+                    write!(buf, "}}\n")?;
                 }
                 SupportedArgumentType::Integer(_) => {
-                    write!(
-                        buf,
-                        r#"if (isNaN(arg{0})) {{
-    throw new Error();
-}}
-"#,
-                        i
-                    )?;
+                    write!(buf, "if (isNaN(arg{0}) {{\n", i)?;
+                    write!(buf.indented(config.indent), "throw new Error();\n")?;
+                    write!(buf, "}}\n")?;
                 }
             }
         }
@@ -140,39 +147,43 @@ where
             match *ty {
                 SupportedArgumentType::IntegerSliceRef(int_ty)
                 | SupportedArgumentType::IntegerSliceMutRef(int_ty)
-                | SupportedArgumentType::IntegerVec(int_ty) => {
-                    match int_ty {
-                        SupportedCopyTy::U8 => {
-                            // store length in temp variable
-                            write!(buf, "let arg{0}_len = arg{0}.length;\n", i)?;
-                            // allocate memory
-                            write!(buf, "let arg{0}_ptr = this._alloc(arg{0}_len);\n", i)?;
-                            write!(
-                                buf,
-                                "let arg{0}_view = this._mem.subarray\
-                                 (arg{0}_ptr, arg{0}_ptr + arg{0}_len);\n",
-                                i
-                            )?;
-                            // get a 'view' into the allocated memory
-                            // and copy the argument's data into it
-                            write!(buf, "arg{0}_view.set(arg{0});\n", i)?;
-                        }
-                        _ => {
-                            write!(
-                                buf,
-                                r#"let arg{0}_len = arg{0}.length;
+                | SupportedArgumentType::IntegerVec(int_ty) => match config.access_style {
+                    AccessStyle::TypedArrays => {
+                        write!(
+                            buf,
+                            r#"let arg{0}_len = arg{0}.length;
 let arg{0}_byte_len = arg{0}_len * {1};
 let arg{0}_ptr = this._alloc(arg{0}_byte_len);
-let arg{0}_view = new {2}(this._mem.buffer, arg{0}_ptr, arg{0}_byte_len);
+let arg{0}_view = new {2}(this._mem, arg{0}_ptr, arg{0}_byte_len);
 arg{0}_view.set(arg{0});
 "#,
-                                i,
-                                int_ty.size_in_bytes(),
-                                javascript_typed_array_for_int(int_ty)
-                            )?;
-                        }
+                            i,
+                            int_ty.size_in_bytes(),
+                            javascript_typed_array_for_int(int_ty)
+                        )?;
                     }
-                }
+                    AccessStyle::DataView => {
+                        write!(
+                            buf,
+                            r#"let arg{0}_len = arg{0}.length;
+let arg{0}_byte_len = arg{0}_len * {1};
+let arg{0}_ptr = this._alloc(arg{0}_byte_len);
+for (var i{0} = 0; i{0} < arg{0}_len; i{0}++) {{
+"#,
+                            i,
+                            int_ty.size_in_bytes()
+                        )?;
+                        js_set_ith_ty_at(
+                            buf.indented(config.indent),
+                            "this._mem",
+                            int_ty,
+                            format_args!("arg{0}_ptr", i),
+                            format_args!("i{0}", i),
+                            format_args!("arg{0}[i{0}]", i),
+                        )?;
+                        write!(buf, "}}\n")?;
+                    }
+                },
                 SupportedArgumentType::Integer(_) => {} // no allocation needed for integers.
             }
         }
@@ -206,21 +217,50 @@ arg{0}_view.set(arg{0});
             match *ty {
                 SupportedArgumentType::IntegerSliceMutRef(int_ty) => {
                     // propagate modifications outwards.
-                    write!(
-                        buf,
-                        r#"if (typeof arg{0}.set == 'function') {{
-    arg{0}.set(arg{0}_view);
-}} else {{
-    for (var i = 0; i < arg{0}_len; i++) {{
-        arg{0}[i] = "#,
-                        i
-                    )?;
-                    if int_ty == SupportedCopyTy::Bool {
-                        write!(buf, "Boolean(arg{0}_view[i])", i)?;
-                    } else {
-                        write!(buf, "arg{0}_view[i]", i)?;
+                    match config.access_style {
+                        AccessStyle::TypedArrays => {
+                            write!(buf, "if (typeof arg{0}.set == 'function') {{", i)?;
+                            write!(buf.indented(config.indent), "arg{0}.set(arg{0}_view);\n", i)?;
+                            write!(buf, "}} else {{")?;
+                            {
+                                let mut buf = buf.indented(config.indent);
+
+                                write!(
+                                    buf,
+                                    "for (var i{0} = 0; i{0} < arg{0}_len; i{0}++) {{\n",
+                                    i
+                                )?;
+                                {
+                                    let mut buf = buf.indented(config.indent);
+                                    write!(buf, "arg{0}[i{0}] = ", i)?;
+                                    if int_ty == SupportedCopyTy::Bool {
+                                        write!(buf, "Boolean(arg{0}_view[i{0}])", i)?;
+                                    } else {
+                                        write!(buf, "arg{0}_view[i{0}]", i)?;
+                                    }
+                                    write!(buf, ";\n")?;
+                                }
+                                write!(buf, "}}\n")?;
+                            }
+                            write!(buf, "}}\n")?;
+                        }
+                        AccessStyle::DataView => {
+                            write!(buf, "for (var i{0} = 0; i{0} < arg{0}_len; i{0}++) {{\n", i,)?;
+                            {
+                                let mut buf = buf.indented(config.indent);
+                                write!(buf, "arg{0}[i{0}] = ", i)?;
+                                js_get_ith_ty_at(
+                                    &mut buf,
+                                    "this._mem",
+                                    int_ty,
+                                    format_args!("arg{0}_ptr", i),
+                                    format_args!("i{0}", i),
+                                )?;
+                                write!(buf, ";\n")?;
+                            }
+                            write!(buf, "}}\n")?;
+                        }
                     }
-                    write!(buf, ";\n    }}\n}}")?;
                 }
                 SupportedArgumentType::IntegerSliceRef(_)
                 | SupportedArgumentType::IntegerVec(_)
@@ -229,15 +269,10 @@ arg{0}_view.set(arg{0});
             // deallocate
             match *ty {
                 SupportedArgumentType::Integer(_) | SupportedArgumentType::IntegerVec(_) => {}
-                SupportedArgumentType::IntegerSliceRef(int_ty)
-                | SupportedArgumentType::IntegerSliceMutRef(int_ty) => match int_ty {
-                    SupportedCopyTy::U8 => {
-                        write!(buf, "this._dealloc(arg{0}_ptr, arg{0}_len);\n", i)?;
-                    }
-                    _ => {
-                        write!(buf, "this._dealloc(arg{0}_ptr, arg{0}_byte_len);\n", i)?;
-                    }
-                },
+                SupportedArgumentType::IntegerSliceRef(_)
+                | SupportedArgumentType::IntegerSliceMutRef(_) => {
+                    write!(buf, "this._dealloc(arg{0}_ptr, arg{0}_byte_len);\n", i)?;
+                }
             }
         }
 
@@ -251,51 +286,96 @@ arg{0}_view.set(arg{0});
             SupportedRetType::Integer(_) => {
                 write!(buf, "return result;\n")?;
             }
-            SupportedRetType::IntegerVec(int_ty) => {
-                write!(
-                    buf,
-                    r#"let result_temp_ptr = result;
+            SupportedRetType::IntegerVec(int_ty) => match config.access_style {
+                AccessStyle::TypedArrays => {
+                    write!(
+                        buf,
+                        r#"let result_temp_ptr = result;
 let result_temp_len = 3;
 let result_temp_byte_len = result_temp_len * {0};
-let result_temp_view = new {1}(this._mem.buffer, result, result_temp_byte_len);
+let result_temp_view = new {1}(this._mem, result, result_temp_byte_len);
 let return_ptr = result_temp_view[0];
 let return_len = result_temp_view[1];
 let return_cap = result_temp_view[2];
 let return_byte_len = return_len * {2};
 let return_byte_cap = return_cap * {2};"#,
-                    SupportedCopyTy::USize.size_in_bytes(),
-                    javascript_typed_array_for_int(SupportedCopyTy::USize),
-                    int_ty.size_in_bytes()
-                )?;
-                match int_ty {
-                    SupportedCopyTy::Bool => {
-                        write!(
-                            buf,
-                            r#"
-let return_view = new {0}(this._mem.buffer, return_ptr, return_byte_len);
+                        SupportedCopyTy::USize.size_in_bytes(),
+                        javascript_typed_array_for_int(SupportedCopyTy::USize),
+                        int_ty.size_in_bytes()
+                    )?;
+                    match int_ty {
+                        SupportedCopyTy::Bool => {
+                            write!(
+                                buf,
+                                r#"
+let return_view = new {0}(this._mem, return_ptr, return_byte_len);
 let return_value_copy = [];
-for (var i = 0; i < return_len; i++) {{
-    return_value_copy.push(Boolean(return_view[i]));
-}}
-return return_value_copy;
+for (var ret_i = 0; ret_i < return_len; ret_i++) {{
 "#,
-                            javascript_typed_array_for_int(int_ty)
-                        )?;
+                                javascript_typed_array_for_int(int_ty)
+                            )?;
+                            write!(
+                                buf.indented(config.indent),
+                                "return_value_copy.push(Boolean(return_view[ret_i]));\n"
+                            )?;
+                            write!(
+                                buf,
+                                r#"}}
+"#,
+                            )?;
+                        }
+                        _ => {
+                            write!(
+                                buf,
+                                r#"
+let return_value_copy = {0}.from(new {0}(this._mem, return_ptr, return_byte_len));
+"#,
+                                javascript_typed_array_for_int(int_ty)
+                            )?;
+                        }
                     }
-                    _ => {
-                        write!(
-                            buf,
-                            r#"
-let return_value_copy = {0}.from(new {0}(this._mem.buffer, return_ptr, return_byte_len));
+                    write!(
+                        buf,
+                        r#"
 this._dealloc(return_ptr, return_byte_cap);
 this._dealloc(result_temp_ptr, result_temp_byte_len);
 return return_value_copy;
-"#,
-                            javascript_typed_array_for_int(int_ty)
-                        )?;
-                    }
+"#
+                    )?;
                 }
-            }
+                AccessStyle::DataView => {
+                    write!(
+                        buf,
+                        r#"let result_temp_ptr = result;
+let return_ptr = this._mem.getUint32(result_temp_ptr);
+let return_len = this._mem.getUint32(result_temp_ptr + {0});
+let return_cap = this._mem.getUint32(result_temp_ptr + {1});
+let return_byte_len = return_len * {2};
+let return_byte_cap = return_cap * {2};
+let return_value_copy = [];
+for (var ret_i = 0; ret_i < return_len; ret_i++) {{
+"#,
+                        SupportedCopyTy::USize.size_in_bytes(),
+                        SupportedCopyTy::USize.size_in_bytes() * 2,
+                        int_ty.size_in_bytes(),
+                    )?;
+                    {
+                        let mut buf = buf.indented(config.indent);
+                        write!(buf, "return_value_copy.push(")?;
+                        js_get_ith_ty_at(&mut buf, "this._mem", int_ty, "return_ptr", "ret_i")?;
+                        write!(buf, ");\n")?;
+                    }
+                    write!(
+                        buf,
+                        r#"}}
+this._dealloc(return_ptr, return_byte_cap);
+this._dealloc(result_temp_ptr, {0});
+return return_value_copy;
+"#,
+                        SupportedCopyTy::USize.size_in_bytes() * 3
+                    )?;
+                }
+            },
         }
 
         // TODO: handle return values (we can eventually do this by allocating
@@ -308,7 +388,7 @@ return return_value_copy;
 }
 
 
-fn write_class_definition_finish<T>(buf: &mut T, js_class_name: &str) -> Result<(), Error>
+fn write_class_definition_finish<T>(config: &Config, buf: &mut T) -> Result<(), Error>
 where
     T: Write,
 {
@@ -317,7 +397,7 @@ where
         r#"}}
 
 exports = module.exports = {}"#,
-        js_class_name
+        config.class_name,
     )?;
     Ok(())
 }
@@ -399,5 +479,104 @@ fn javascript_typed_array_for_int(ty: SupportedCopyTy) -> &'static str {
         F32 => "Float32Array",
         F64 => "Float64Array",
         Bool => "Uint8Array", // additional code needed to handle this case
+    }
+}
+
+fn js_set_ith_ty_at<T, U, V, W, X>(
+    mut buf: T,
+    data_view_name: U,
+    ty: SupportedCopyTy,
+    ptr_name: V,
+    i_name: W,
+    value: X,
+) -> Result<(), fmt::Error>
+where
+    T: fmt::Write,
+    U: Display,
+    V: Display,
+    W: Display,
+    X: Display,
+{
+    use self::SupportedCopyTy::*;
+
+    let value = match ty {
+        Bool => format!("Boolean({})", value),
+        _ => value.to_string(),
+    };
+
+    let set_func_name = match ty {
+        U8 => "setUint8",
+        U16 => "setUint16",
+        USize | U32 => "setUint32",
+        I8 => "setInt8",
+        I16 => "setInt16",
+        ISize | I32 => "setInt32",
+        F32 => "setFloat32",
+        F64 => "setFloat64",
+        Bool => "setUint8",
+    };
+
+    let offset = ty.size_in_bytes();
+
+    write!(
+        buf,
+        "{}.{}({} + {} * {}, {});\n",
+        data_view_name,
+        set_func_name,
+        ptr_name,
+        offset,
+        i_name,
+        value
+    )
+}
+
+fn js_get_ith_ty_at<T, U, V, W>(
+    mut buf: T,
+    data_view_name: U,
+    ty: SupportedCopyTy,
+    ptr_name: V,
+    i_name: W,
+) -> Result<(), fmt::Error>
+where
+    T: fmt::Write,
+    U: Display,
+    V: Display,
+    W: Display,
+{
+    use self::SupportedCopyTy::*;
+
+    let get_func_name = match ty {
+        U8 => "getUint8",
+        U16 => "getUint16",
+        USize | U32 => "getUint32",
+        I8 => "getInt8",
+        I16 => "getInt16",
+        ISize | I32 => "getInt32",
+        F32 => "getFloat32",
+        F64 => "getFloat64",
+        Bool => "getUint8",
+    };
+
+    let offset = ty.size_in_bytes();
+
+    match ty {
+        Bool => write!(
+            buf,
+            "Boolean({}.{}({} + {} * {}))",
+            data_view_name,
+            get_func_name,
+            ptr_name,
+            offset,
+            i_name
+        ),
+        _ => write!(
+            buf,
+            "{}.{}({} + {} * {})",
+            data_view_name,
+            get_func_name,
+            ptr_name,
+            offset,
+            i_name
+        ),
     }
 }
