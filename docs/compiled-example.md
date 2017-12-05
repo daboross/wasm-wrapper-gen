@@ -37,7 +37,7 @@ js_fn! {
 }
 ```
 
-The following output is generated (retrieved with `cargo-expand`):
+This is the end result rust file, as retrieved by `cargo-expand`:
 
 ```rust
 #![feature(prelude_import)]
@@ -101,13 +101,14 @@ pub extern "C" fn __js_fn_all(__arg0: u32) -> *const usize {
 }
 ```
 
-And the following JS is generated:
+And this is the JavaScript file generated:
 
 ```js
 class Fibonacci {
     constructor (wasm_module) {
         this._mod = new WebAssembly.Instance(wasm_module, {});
-        this._mem = new DataView(this._mod.exports["memory"].buffer);
+        this._raw_mem = this._mod.exports["memory"];
+        this._mem = new DataView(this._raw_mem.buffer);
 
         this._alloc = this._mod.exports["__js_fn__builtin_alloc"];
         this._dealloc = this._mod.exports["__js_fn__builtin_dealloc"];
@@ -118,11 +119,18 @@ class Fibonacci {
         };
     }
 
+    _check_mem_realloc() {
+        if (this._mem.byteLength != this._raw_mem.byteLength) {
+            this._mem = new DataView(this._raw_mem.buffer);
+        }
+    }
+
     fib(arg0) {
         if (isNaN(arg0)) {
             throw new Error();
         }
         let result = this._funcs['fib'](arg0);
+        this._check_mem_realloc();
         return result;
     }
 
@@ -131,6 +139,7 @@ class Fibonacci {
             throw new Error();
         }
         let result = this._funcs['all'](arg0);
+        this._check_mem_realloc();
         let result_temp_ptr = result;
         let return_ptr = this._mem.getUint32(result_temp_ptr, true);
         let return_len = this._mem.getUint32(result_temp_ptr + 4, true);
