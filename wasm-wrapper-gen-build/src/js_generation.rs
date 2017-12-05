@@ -396,7 +396,8 @@ where
         buf,
         r#"}}
 
-exports = module.exports = {}"#,
+exports = module.exports = {};
+"#,
         config.class_name,
     )?;
     Ok(())
