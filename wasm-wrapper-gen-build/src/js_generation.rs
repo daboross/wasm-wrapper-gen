@@ -136,7 +136,7 @@ where
                     write!(buf, "}}\n")?;
                 }
                 SupportedArgumentType::Integer(_) => {
-                    write!(buf, "if (isNaN(arg{0}) {{\n", i)?;
+                    write!(buf, "if (isNaN(arg{0})) {{\n", i)?;
                     write!(buf.indented(config.indent), "throw new Error();\n")?;
                     write!(buf, "}}\n")?;
                 }

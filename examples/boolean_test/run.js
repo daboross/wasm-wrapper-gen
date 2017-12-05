@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 const fs = require('fs');
 const SimpleSummation = require('./target/wrapper.js');
 

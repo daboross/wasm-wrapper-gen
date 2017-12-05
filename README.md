@@ -16,22 +16,22 @@ Note: this assumes little-endian hardware (the majority of modern hardware).
 ### Currently supported:
 
 - Argument types:
-  - `u8`, `u16`, `u32`, `usize`, `i8`, `i16`, `i32`, `isize`
-  - `&[_]`, `&mut [_]`, `Vec<_>` wrapping any of the above
+  - `bool`, `u8`, `u16`, `u32`, `usize`, `i8`, `i16`, `i32`, `isize`, `f32`, `f64`
+  - `&[_]`, `&mut [_]`, `Vec<_>` where `_` is any of the above
 - Return types:
-  - `u8`, `u16`, `u32`, `usize`, `i8`, `i16`, `i32`, `isize`
-  - `Vec<_>` wrapping the above
-- Full memory freeing for all allocated types as long as the rust
-  function doesn't panic
+  - `bool`, `u8`, `u16`, `u32`, `usize`, `i8`, `i16`, `i32`, `isize`, `f32`, `f64`
+  - `Vec<_>` where `_` is any of the above
+- Full automatic memory management and freeing unless rust function panics
+- Configuration to use either a single DataView or a TypedArray instance per argument
+  to access arrays
+- Configurable output JS indentation
 
 ### Unimplemented:
 
 - Next to do:
-  - Add options to build script JS generation
-    - Add support for making an async constructor rather than sync one.
-    - Add support for using DataView rather than (U)int*Array structures in order
-      to allow for big-endian machines
-  - Add support for 'bool' as a simple integer type and test boolean parameters, return types, and arrays
+  - Add support for making an async constructor rather than sync one.
+  - Add support for `impl` blocks with `self` arguments and creating wrapper JS types
+    which manage allocation sanely.
 
 - Further future:
   - Make real tests and figure out how to do a build.rs script which only runs for tests
