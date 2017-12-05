@@ -87,6 +87,7 @@ impl ToTokens for SupportedCopyTy {
     }
 }
 
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum SupportedArgumentType {
     // &[u8]
     IntegerSliceRef(SupportedCopyTy),

@@ -108,6 +108,189 @@ where
     Ok(())
 }
 
+fn validate_argument<T, U, V>(
+    config: &Config,
+    buf: &mut T,
+    arg_name: U,
+    ty: SupportedArgumentType,
+    failure: V,
+) -> fmt::Result
+where
+    T: Write,
+    U: Display,
+    V: Display,
+{
+    match ty {
+        SupportedArgumentType::IntegerSliceRef(_)
+        | SupportedArgumentType::IntegerSliceMutRef(_)
+        | SupportedArgumentType::IntegerVec(_) => {
+            write!(buf, "if ({0} == null || isNaN({0}).length) {{\n", arg_name)?;
+            write!(buf.indented(config.indent), "{}\n", failure)?;
+            write!(buf, "}}\n")?;
+        }
+        SupportedArgumentType::Integer(_) => {
+            write!(buf, "if (isNaN({0})) {{\n", arg_name)?;
+            write!(buf.indented(config.indent), "{}\n", failure)?;
+            write!(buf, "}}\n")?;
+        }
+    }
+
+    Ok(())
+}
+
+fn prepare_argument_allocation<T, U>(
+    config: &Config,
+    buf: &mut T,
+    arg_name: U,
+    ty: SupportedArgumentType,
+) -> fmt::Result
+where
+    T: Write,
+    U: Display,
+{
+    match ty {
+        SupportedArgumentType::IntegerSliceRef(int_ty)
+        | SupportedArgumentType::IntegerSliceMutRef(int_ty)
+        | SupportedArgumentType::IntegerVec(int_ty) => match config.access_style {
+            AccessStyle::TypedArrays => {
+                write!(
+                    buf,
+                    r#"let {0}_len = {0}.length;
+let {0}_byte_len = {0}_len * {1};
+let {0}_ptr = this._alloc({0}_byte_len);
+let {0}_view = new {2}(this._mem, {0}_ptr, {0}_byte_len);
+{0}_view.set({0});
+"#,
+                    arg_name,
+                    int_ty.size_in_bytes(),
+                    javascript_typed_array_for_int(int_ty)
+                )?;
+            }
+            AccessStyle::DataView => {
+                write!(
+                    buf,
+                    r#"let {0}_len = {0}.length;
+let {0}_byte_len = {0}_len * {1};
+let {0}_ptr = this._alloc({0}_byte_len);
+for (var {0}_i = 0; {0}_i < {0}_len; {0}_i++) {{
+"#,
+                    arg_name,
+                    int_ty.size_in_bytes()
+                )?;
+                js_set_ith_ty_at(
+                    buf.indented(config.indent),
+                    "this._mem",
+                    int_ty,
+                    format_args!("{0}_ptr", arg_name),
+                    format_args!("{0}_i", arg_name),
+                    format_args!("{0}[{0}_i]", arg_name),
+                )?;
+                write!(buf, "}}\n")?;
+            }
+        },
+        SupportedArgumentType::Integer(_) => {} // no allocation needed for integers.
+    }
+
+    Ok(())
+}
+
+fn deallocate_argument_allocation<T, U>(
+    _config: &Config,
+    buf: &mut T,
+    arg_name: U,
+    ty: SupportedArgumentType,
+) -> fmt::Result
+where
+    T: Write,
+    U: Display,
+{
+    // deallocate
+    match ty {
+        SupportedArgumentType::Integer(_) | SupportedArgumentType::IntegerVec(_) => {}
+        SupportedArgumentType::IntegerSliceRef(_)
+        | SupportedArgumentType::IntegerSliceMutRef(_) => {
+            write!(buf, "this._dealloc({0}_ptr, {0}_byte_len);\n", arg_name)?;
+        }
+    }
+
+    Ok(())
+}
+
+fn propogate_argument_changes_outwards<T, U>(
+    config: &Config,
+    buf: &mut T,
+    arg_name: U,
+    ty: SupportedArgumentType,
+) -> fmt::Result
+where
+    T: Write,
+    U: Display,
+{
+    // copy changes back for mutable references
+    match ty {
+        SupportedArgumentType::IntegerSliceMutRef(int_ty) => {
+            // propagate modifications outwards.
+            match config.access_style {
+                AccessStyle::TypedArrays => {
+                    write!(buf, "if (typeof {0}.set == 'function') {{", arg_name)?;
+                    write!(
+                        buf.indented(config.indent),
+                        "{0}.set({0}_view);\n",
+                        arg_name
+                    )?;
+                    write!(buf, "}} else {{")?;
+                    {
+                        let mut buf = buf.indented(config.indent);
+
+                        write!(
+                            buf,
+                            "for (var {0}_i = 0; {0}_i < {0}_len; {0}_i++) {{\n",
+                            arg_name
+                        )?;
+                        {
+                            let mut buf = buf.indented(config.indent);
+                            write!(buf, "{0}[{0}_i] = ", arg_name)?;
+                            if int_ty == SupportedCopyTy::Bool {
+                                write!(buf, "Boolean({0}_view[{0}_i])", arg_name)?;
+                            } else {
+                                write!(buf, "{0}_view[{0}_i]", arg_name)?;
+                            }
+                            write!(buf, ";\n")?;
+                        }
+                        write!(buf, "}}\n")?;
+                    }
+                    write!(buf, "}}\n")?;
+                }
+                AccessStyle::DataView => {
+                    write!(
+                        buf,
+                        "for (var {0}_i = 0; {0}_i < {0}_len; {0}_i++) {{\n",
+                        arg_name
+                    )?;
+                    {
+                        let mut buf = buf.indented(config.indent);
+                        write!(buf, "{0}[{0}_i] = ", arg_name)?;
+                        js_get_ith_ty_at(
+                            &mut buf,
+                            "this._mem",
+                            int_ty,
+                            format_args!("{0}_ptr", arg_name),
+                            format_args!("{0}_i", arg_name),
+                        )?;
+                        write!(buf, ";\n")?;
+                    }
+                    write!(buf, "}}\n")?;
+                }
+            }
+        }
+        SupportedArgumentType::IntegerSliceRef(_)
+        | SupportedArgumentType::IntegerVec(_)
+        | SupportedArgumentType::Integer(_) => {}
+    }
+
+    Ok(())
+}
+
 fn write_method<T>(config: &Config, buf: &mut T, info: &JsFnInfo) -> Result<(), Error>
 where
     T: Write,
@@ -126,77 +309,29 @@ where
     {
         let buf = &mut buf.indented(config.indent);
         // argument testing
-        for (i, ty) in info.args_ty.iter().enumerate() {
-            match *ty {
-                SupportedArgumentType::IntegerSliceRef(_)
-                | SupportedArgumentType::IntegerSliceMutRef(_)
-                | SupportedArgumentType::IntegerVec(_) => {
-                    write!(buf, "if (arg{0} == null || isNaN(arg{0}).length) {{\n", i)?;
-                    write!(buf.indented(config.indent), "throw new Error();\n")?;
-                    write!(buf, "}}\n")?;
-                }
-                SupportedArgumentType::Integer(_) => {
-                    write!(buf, "if (isNaN(arg{0})) {{\n", i)?;
-                    write!(buf.indented(config.indent), "throw new Error();\n")?;
-                    write!(buf, "}}\n")?;
-                }
-            }
+        for (i, &ty) in info.args_ty.iter().enumerate() {
+            validate_argument(
+                config,
+                buf,
+                format_args!("arg{}", i),
+                ty,
+                "throw new Error();",
+            )?;
         }
         // allocation
-        for (i, ty) in info.args_ty.iter().enumerate() {
-            match *ty {
-                SupportedArgumentType::IntegerSliceRef(int_ty)
-                | SupportedArgumentType::IntegerSliceMutRef(int_ty)
-                | SupportedArgumentType::IntegerVec(int_ty) => match config.access_style {
-                    AccessStyle::TypedArrays => {
-                        write!(
-                            buf,
-                            r#"let arg{0}_len = arg{0}.length;
-let arg{0}_byte_len = arg{0}_len * {1};
-let arg{0}_ptr = this._alloc(arg{0}_byte_len);
-let arg{0}_view = new {2}(this._mem, arg{0}_ptr, arg{0}_byte_len);
-arg{0}_view.set(arg{0});
-"#,
-                            i,
-                            int_ty.size_in_bytes(),
-                            javascript_typed_array_for_int(int_ty)
-                        )?;
-                    }
-                    AccessStyle::DataView => {
-                        write!(
-                            buf,
-                            r#"let arg{0}_len = arg{0}.length;
-let arg{0}_byte_len = arg{0}_len * {1};
-let arg{0}_ptr = this._alloc(arg{0}_byte_len);
-for (var i{0} = 0; i{0} < arg{0}_len; i{0}++) {{
-"#,
-                            i,
-                            int_ty.size_in_bytes()
-                        )?;
-                        js_set_ith_ty_at(
-                            buf.indented(config.indent),
-                            "this._mem",
-                            int_ty,
-                            format_args!("arg{0}_ptr", i),
-                            format_args!("i{0}", i),
-                            format_args!("arg{0}[i{0}]", i),
-                        )?;
-                        write!(buf, "}}\n")?;
-                    }
-                },
-                SupportedArgumentType::Integer(_) => {} // no allocation needed for integers.
-            }
+        for (i, &ty) in info.args_ty.iter().enumerate() {
+            prepare_argument_allocation(config, buf, format_args!("arg{}", i), ty)?;
         }
 
         // actual function call
         write!(buf, "let result = this._funcs['{}'](", info.rust_name)?;
         let mut first_iteration = true;
-        for (i, ty) in info.args_ty.iter().enumerate() {
+        for (i, &ty) in info.args_ty.iter().enumerate() {
             if !first_iteration {
                 write!(buf, ", ")?;
             }
 
-            match *ty {
+            match ty {
                 SupportedArgumentType::IntegerSliceRef(_)
                 | SupportedArgumentType::IntegerSliceMutRef(_)
                 | SupportedArgumentType::IntegerVec(_) => {
@@ -212,68 +347,9 @@ for (var i{0} = 0; i{0} < arg{0}_len; i{0}++) {{
         write!(buf, ");\n")?;
 
         // cleanup (deallocation)
-        for (i, ty) in info.args_ty.iter().enumerate() {
-            // copy changes back for mutable references
-            match *ty {
-                SupportedArgumentType::IntegerSliceMutRef(int_ty) => {
-                    // propagate modifications outwards.
-                    match config.access_style {
-                        AccessStyle::TypedArrays => {
-                            write!(buf, "if (typeof arg{0}.set == 'function') {{", i)?;
-                            write!(buf.indented(config.indent), "arg{0}.set(arg{0}_view);\n", i)?;
-                            write!(buf, "}} else {{")?;
-                            {
-                                let mut buf = buf.indented(config.indent);
-
-                                write!(
-                                    buf,
-                                    "for (var i{0} = 0; i{0} < arg{0}_len; i{0}++) {{\n",
-                                    i
-                                )?;
-                                {
-                                    let mut buf = buf.indented(config.indent);
-                                    write!(buf, "arg{0}[i{0}] = ", i)?;
-                                    if int_ty == SupportedCopyTy::Bool {
-                                        write!(buf, "Boolean(arg{0}_view[i{0}])", i)?;
-                                    } else {
-                                        write!(buf, "arg{0}_view[i{0}]", i)?;
-                                    }
-                                    write!(buf, ";\n")?;
-                                }
-                                write!(buf, "}}\n")?;
-                            }
-                            write!(buf, "}}\n")?;
-                        }
-                        AccessStyle::DataView => {
-                            write!(buf, "for (var i{0} = 0; i{0} < arg{0}_len; i{0}++) {{\n", i,)?;
-                            {
-                                let mut buf = buf.indented(config.indent);
-                                write!(buf, "arg{0}[i{0}] = ", i)?;
-                                js_get_ith_ty_at(
-                                    &mut buf,
-                                    "this._mem",
-                                    int_ty,
-                                    format_args!("arg{0}_ptr", i),
-                                    format_args!("i{0}", i),
-                                )?;
-                                write!(buf, ";\n")?;
-                            }
-                            write!(buf, "}}\n")?;
-                        }
-                    }
-                }
-                SupportedArgumentType::IntegerSliceRef(_)
-                | SupportedArgumentType::IntegerVec(_)
-                | SupportedArgumentType::Integer(_) => {}
-            }
-            // deallocate
-            match *ty {
-                SupportedArgumentType::Integer(_) | SupportedArgumentType::IntegerVec(_) => {}
-                SupportedArgumentType::IntegerSliceRef(_)
-                | SupportedArgumentType::IntegerSliceMutRef(_) => {
-                    write!(buf, "this._dealloc(arg{0}_ptr, arg{0}_byte_len);\n", i)?;
-                }
-            }
+        for (i, &ty) in info.args_ty.iter().enumerate() {
+            propogate_argument_changes_outwards(config, buf, format_args!("arg{}", i), ty)?;
+            deallocate_argument_allocation(config, buf, format_args!("arg{}", i), ty)?;
         }
 
         match info.ret_ty {
