@@ -15,7 +15,7 @@ use failure::Error;
 
 use wasm_wrapper_gen_shared::JsFnInfo;
 
-pub use style::{Config, AccessStyle};
+pub use style::{AccessStyle, Config};
 
 impl<'a> Config<'a> {
     pub fn translate<P, U>(&self, input_file: P, output_file: U) -> Result<(), Error>

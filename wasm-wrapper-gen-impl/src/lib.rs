@@ -62,17 +62,15 @@ proc_macro_item_impl! {
 }
 
 fn process_all_functions(input: &str) -> Result<String, Error> {
-    let token_trees = syn::parse_token_trees(input).map_err(|e| {
-        format_err!("failed to parse macro input as an item: {}", e)
-    })?;
+    let token_trees = syn::parse_token_trees(input)
+        .map_err(|e| format_err!("failed to parse macro input as an item: {}", e))?;
 
     let ast = transform_macro_input_to_items(token_trees)?;
 
     let mut full_out = quote::Tokens::new();
     for item in &ast {
-        let output = process_item(item).with_context(|e| {
-            format!("failed to process function '{:?}': {}", item, e)
-        })?;
+        let output = process_item(item)
+            .with_context(|e| format!("failed to process function '{:?}': {}", item, e))?;
 
         full_out.append(output);
     }

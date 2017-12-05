@@ -65,17 +65,14 @@ pub fn transform_macro_input_to_items(
     }
 
     if !so_far.as_ref().is_empty() {
-        return Err(MacroError::UnexpectedEndOfMacroInvocation {
-            tokens: so_far,
-        });
+        return Err(MacroError::UnexpectedEndOfMacroInvocation { tokens: so_far });
     }
 
     found_full
         .into_iter()
         .map(|found| {
-            syn::parse_item(found.as_ref()).map_err(|desc| {
-                MacroError::UnexpectedReparseFailure { err_msg: desc }
-            })
+            syn::parse_item(found.as_ref())
+                .map_err(|desc| MacroError::UnexpectedReparseFailure { err_msg: desc })
         })
         .collect::<Result<Vec<syn::Item>, MacroError>>()
 }

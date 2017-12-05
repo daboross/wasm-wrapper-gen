@@ -26,9 +26,7 @@ pub fn get_argument_types(decl: &syn::FnDecl) -> Result<Vec<SupportedArgumentTyp
             }
             syn::FnArg::Captured(_, ref ty) | syn::FnArg::Ignored(ref ty) => Ok(ty.clone()),
         })
-        .map(|ty_result| {
-            ty_result.and_then(|ty| SupportedArgumentType::new(&ty))
-        })
+        .map(|ty_result| ty_result.and_then(|ty| SupportedArgumentType::new(&ty)))
         .collect::<Result<_, _>>()?)
 }
 

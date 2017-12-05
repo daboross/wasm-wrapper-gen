@@ -9,7 +9,7 @@ mod types;
 mod processing;
 mod parsing;
 
-pub use types::{SupportedCopyTy, SupportedArgumentType, SupportedRetType};
+pub use types::{SupportedArgumentType, SupportedCopyTy, SupportedRetType};
 pub use processing::{extract_func_info, get_argument_types, get_ret_type, JsFnInfo,
                      TransformedRustIdent};
 pub use parsing::{transform_mac_to_items, transform_macro_input_to_items};
