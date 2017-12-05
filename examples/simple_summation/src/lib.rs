@@ -1,9 +1,6 @@
 #[macro_use]
 extern crate wasm_wrapper_gen;
 
-/// main method is necessary, and can be empty.
-fn main() {}
-
 fn sum(input: &[u32]) -> i32 {
     let sum: i32 = input.iter().map(|&x| x as i32).sum();
     sum

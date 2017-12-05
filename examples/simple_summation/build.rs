@@ -12,12 +12,12 @@ fn real_main() -> Result<(), failure::Error> {
     wasm_wrapper_gen_build::Config::new()
         .with_class_name("SimpleSimmulation")
         .with_array_access_style(wasm_wrapper_gen_build::AccessStyle::TypedArrays)
-        .translate("src/main.rs", "target/wrapper.js")?;
+        .translate("src/lib.rs", "target/wrapper.js")?;
 
     wasm_wrapper_gen_build::Config::new()
         .with_class_name("SimpleSimmulation")
         .with_array_access_style(wasm_wrapper_gen_build::AccessStyle::DataView)
-        .translate("src/main.rs", "target/wrapper_dataview.js")?;
+        .translate("src/lib.rs", "target/wrapper_dataview.js")?;
 
     Ok(())
 }

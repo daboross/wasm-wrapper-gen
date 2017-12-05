@@ -1,8 +1,6 @@
 #[macro_use]
 extern crate wasm_wrapper_gen;
 
-fn main() {}
-
 js_fn! {
     fn count_booleans(input: &[bool]) -> i32 {
         input.iter().fold(0, |acc, &b| if b { acc + 1 } else { acc })

@@ -3,6 +3,9 @@ name = "fibonacci"
 version = "0.1.0"
 authors = ["David Ross <daboross@daboross.net>"]
 
+[lib]
+crate-type = ["cdylib"]
+
 [dependencies]
 wasm-wrapper-gen = { version = "0.0.2", path = "../../" }
 

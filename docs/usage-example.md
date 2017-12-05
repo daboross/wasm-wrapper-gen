@@ -3,13 +3,11 @@ Short example of using `wasm-wrapper-gen`
 
 This is a shortened version of the project in `examples/fibonacci`.
 
-`main.rs` declaring outputs:
+`lib.rs` declaring outputs:
 
 ```rust
 #[macro_use]
 extern crate wasm_wrapper_gen;
-
-fn main() {}
 
 fn fib(nth: u32) -> f64 {
     let mut last = 0.0;
@@ -35,7 +33,7 @@ extern crate wasm_wrapper_gen_build;
 fn main() {
     wasm_wrapper_gen_build::Config::new()
         .with_class_name("Fibonacci")
-        .translate("src/main.rs", "target/wrapper.js")
+        .translate("src/lib.rs", "target/wrapper.js")
         .unwrap_or_else(|e| {
             eprintln!("error: {}", e);
             ::std::process::exit(1);
@@ -50,6 +48,9 @@ fn main() {
 name = "fibonacci"
 version = "0.1.0"
 authors = ["David Ross <daboross@daboross.net>"]
+
+[lib]
+crate-type = ["cdylib"]
 
 [dependencies]
 wasm-wrapper-gen = { version = "0.0.2", path = "../../" }

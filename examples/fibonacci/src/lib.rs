@@ -1,8 +1,6 @@
 #[macro_use]
 extern crate wasm_wrapper_gen;
 
-fn main() {}
-
 fn fib(nth: u32) -> f64 {
     let mut last = 0.0;
     let mut current = 1.0;
