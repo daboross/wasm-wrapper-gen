@@ -59,12 +59,14 @@ where
             )?;
             match config.access_style {
                 AccessStyle::TypedArrays => {
-                    write!(buf, "this._mem = this._mod.exports[\"memory\"].buffer;\n")?;
+                    write!(buf, "this._mem = this._mod.exports[\"memory\"];\n")?;
                 }
                 AccessStyle::DataView => {
                     write!(
                         buf,
-                        "this._mem = new DataView(this._mod.exports[\"memory\"].buffer);\n"
+                        r#"this._raw_mem = this._mod.exports["memory"];
+this._mem = new DataView(this._raw_mem.buffer);
+"#
                     )?;
                 }
             }
@@ -105,6 +107,26 @@ where
 {
     write!(buf.indented(config.indent * 2), "}};\n")?;
     write!(buf.indented(config.indent), "}}\n")?;
+    match config.access_style {
+        AccessStyle::TypedArrays => {}
+        AccessStyle::DataView => {
+            let buf = &mut buf.indented(config.indent);
+            write!(buf, "\n_check_mem_realloc() {{\n")?;
+            {
+                let buf = &mut buf.indented(config.indent);
+                write!(
+                    buf,
+                    "if (this._mem.byteLength != this._raw_mem.byteLength) {{\n"
+                )?;
+                write!(
+                    buf.indented(config.indent),
+                    "this._mem = new DataView(this._raw_mem.buffer);\n"
+                )?;
+                write!(buf, "}}\n")?;
+            }
+            write!(buf, "}}\n")?;
+        }
+    }
     Ok(())
 }
 
@@ -158,7 +180,7 @@ where
                     r#"let {0}_len = {0}.length;
 let {0}_byte_len = {0}_len * {1};
 let {0}_ptr = this._alloc({0}_byte_len);
-let {0}_view = new {2}(this._mem, {0}_ptr, {0}_byte_len);
+let {0}_view = new {2}(this._mem.buffer, {0}_ptr, {0}_byte_len);
 {0}_view.set({0});
 "#,
                     arg_name,
@@ -172,6 +194,7 @@ let {0}_view = new {2}(this._mem, {0}_ptr, {0}_byte_len);
                     r#"let {0}_len = {0}.length;
 let {0}_byte_len = {0}_len * {1};
 let {0}_ptr = this._alloc({0}_byte_len);
+this._check_mem_realloc();
 for (var {0}_i = 0; {0}_i < {0}_len; {0}_i++) {{
 "#,
                     arg_name,
@@ -232,6 +255,18 @@ where
             // propagate modifications outwards.
             match config.access_style {
                 AccessStyle::TypedArrays => {
+                    write!(
+                        buf,
+                        "if ({0}_view.buffer.byteLength != this._mem.buffer.byteLength) {{\n",
+                        arg_name
+                    )?;
+                    write!(
+                        buf.indented(config.indent),
+                        "{0}_view = new {1}(this._mem.buffer, {0}_ptr, {0}_byte_len);\n",
+                        arg_name,
+                        javascript_typed_array_for_int(int_ty)
+                    )?;
+                    write!(buf, "}}\n")?;
                     write!(buf, "if (typeof {0}.set == 'function') {{", arg_name)?;
                     write!(
                         buf.indented(config.indent),
@@ -345,6 +380,9 @@ where
         }
 
         write!(buf, ");\n")?;
+        if config.access_style == AccessStyle::DataView {
+            write!(buf, "this._check_mem_realloc();\n")?;
+        }
 
         // cleanup (deallocation)
         for (i, &ty) in info.args_ty.iter().enumerate() {
@@ -369,7 +407,7 @@ where
                         r#"let result_temp_ptr = result;
 let result_temp_len = 3;
 let result_temp_byte_len = result_temp_len * {0};
-let result_temp_view = new {1}(this._mem, result, result_temp_byte_len);
+let result_temp_view = new {1}(this._mem.buffer, result, result_temp_byte_len);
 let return_ptr = result_temp_view[0];
 let return_len = result_temp_view[1];
 let return_cap = result_temp_view[2];
@@ -384,7 +422,7 @@ let return_byte_cap = return_cap * {2};"#,
                             write!(
                                 buf,
                                 r#"
-let return_view = new {0}(this._mem, return_ptr, return_byte_len);
+let return_view = new {0}(this._mem.buffer, return_ptr, return_byte_len);
 let return_value_copy = [];
 for (var ret_i = 0; ret_i < return_len; ret_i++) {{
 "#,
@@ -404,7 +442,7 @@ for (var ret_i = 0; ret_i < return_len; ret_i++) {{
                             write!(
                                 buf,
                                 r#"
-let return_value_copy = {0}.from(new {0}(this._mem, return_ptr, return_byte_len));
+let return_value_copy = {0}.from(new {0}(this._mem.buffer, return_ptr, return_byte_len));
 "#,
                                 javascript_typed_array_for_int(int_ty)
                             )?;

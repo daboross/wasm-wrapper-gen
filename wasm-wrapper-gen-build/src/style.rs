@@ -1,6 +1,7 @@
 use std::borrow::Cow;
 
 // TODO: add hyperlinks to documentation.
+#[derive(Clone, Debug)]
 pub struct Config<'a> {
     /// Class name to generate. Default "WasmWrapper".
     pub(crate) class_name: Cow<'a, str>,
@@ -10,6 +11,7 @@ pub struct Config<'a> {
     pub(crate) access_style: AccessStyle,
 }
 
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum AccessStyle {
     /// Construct typed arrays in each function for use.
     ///
