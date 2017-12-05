@@ -1,7 +1,7 @@
 Short example of using `wasm-wrapper-gen`
 ===
 
-This is a shortened version of the project in `examples/simple_summation`.
+This is a shortened version of the project in `examples/fibonacci`.
 
 `main.rs` declaring outputs:
 
@@ -9,15 +9,21 @@ This is a shortened version of the project in `examples/simple_summation`.
 #[macro_use]
 extern crate wasm_wrapper_gen;
 
-fn main() {} // required for target
+fn main() {}
 
-fn sum(input: &[i32]) -> i32 {
-    input.iter().cloned().sum()
+fn fib(nth: u32) -> f64 {
+    let mut last = 0.0;
+    let mut current = 1.0;
+    for _ in 0..nth {
+        let temp = current + last;
+        last = current;
+        current = temp;
+    }
+    current
 }
 
-// macro provided by wasm-wrapper-gen
 js_fn! {
-    fn sum(input: &[i32]) -> i32 => sum;
+    fn fib(nth: u32) -> f64 => fib;
 }
 ```
 
@@ -27,15 +33,13 @@ js_fn! {
 extern crate wasm_wrapper_gen_build;
 
 fn main() {
-    let result = wasm_wrapper_gen_build::translate_files(
-        "src/main.rs", // in file
-        "target/wrapper.js", // out file
-        "SimpleSummation",
-    );
-
-    if let Err(e) = result {
-        panic!("error: {}", e);
-    }
+    wasm_wrapper_gen_build::Config::new()
+        .with_class_name("Fibonacci")
+        .translate("src/main.rs", "target/wrapper.js")
+        .unwrap_or_else(|e| {
+            eprintln!("error: {}", e);
+            ::std::process::exit(1);
+        });
 }
 ```
 
@@ -43,35 +47,34 @@ fn main() {
 
 ```toml
 [package]
-name = "simple_summation"
+name = "fibonacci"
 version = "0.1.0"
 authors = ["David Ross <daboross@daboross.net>"]
 
 [dependencies]
-wasm-wrapper-gen = "0.0.2"
+wasm-wrapper-gen = { version = "0.0.2", path = "../../" }
 
 [build-dependencies]
-wasm-wrapper-gen-build = "0.0.2"
+wasm-wrapper-gen-build = { version = "0.0.2", path = "../../wasm-wrapper-gen-build/" }
 ```
 
 And finally, usage from within node.js:
 
 ```js
+#!/usr/bin/env node
 const fs = require('fs');
-const SimpleSummation = require('./target/wrapper.js');
+const Fibonacci = require('./target/wrapper.js');
 
 function main() {
-    let code = fs.readFileSync("target/wasm32-unknown-unknown/release/simple_summation.wasm");
-
+    let code = fs.readFileSync("target/wasm32-unknown-unknown/release/fibonacci.wasm");
     let module = new WebAssembly.Module(code);
+    let fib = new Fibonacci(module);
 
-    let instance = new SimpleSummation(module);
-
-    let input = [1, 2, 3, 4, 5];
-
-    let output = instance.sum(input);
-
-    console.log(`sum of ${input}: ${output}`);
+    console.log(`fib(0): ${fib.fib(0)}`);
+    console.log(`fib(1): ${fib.fib(1)}`);
+    console.log(`fib(2): ${fib.fib(2)}`);
+    console.log(`fib(20): ${fib.fib(20)}`);
+    console.log(`fib(200): ${fib.fib(200)}`);
 }
 
 main();
