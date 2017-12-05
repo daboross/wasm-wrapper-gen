@@ -347,9 +347,9 @@ return return_value_copy;
                     write!(
                         buf,
                         r#"let result_temp_ptr = result;
-let return_ptr = this._mem.getUint32(result_temp_ptr);
-let return_len = this._mem.getUint32(result_temp_ptr + {0});
-let return_cap = this._mem.getUint32(result_temp_ptr + {1});
+let return_ptr = this._mem.getUint32(result_temp_ptr, true);
+let return_len = this._mem.getUint32(result_temp_ptr + {0}, true);
+let return_cap = this._mem.getUint32(result_temp_ptr + {1}, true);
 let return_byte_len = return_len * {2};
 let return_byte_cap = return_cap * {2};
 let return_value_copy = [];
@@ -505,7 +505,7 @@ where
     };
 
     let set_func_name = match ty {
-        U8 => "setUint8",
+        Bool | U8 => "setUint8",
         U16 => "setUint16",
         USize | U32 => "setUint32",
         I8 => "setInt8",
@@ -513,14 +513,13 @@ where
         ISize | I32 => "setInt32",
         F32 => "setFloat32",
         F64 => "setFloat64",
-        Bool => "setUint8",
     };
 
     let offset = ty.size_in_bytes();
 
     write!(
         buf,
-        "{}.{}({} + {} * {}, {});\n",
+        "{}.{}({} + {} * {}, {}, true);\n",
         data_view_name,
         set_func_name,
         ptr_name,
@@ -546,7 +545,7 @@ where
     use self::SupportedCopyTy::*;
 
     let get_func_name = match ty {
-        U8 => "getUint8",
+        Bool | U8 => "getUint8",
         U16 => "getUint16",
         USize | U32 => "getUint32",
         I8 => "getInt8",
@@ -554,7 +553,6 @@ where
         ISize | I32 => "getInt32",
         F32 => "getFloat32",
         F64 => "getFloat64",
-        Bool => "getUint8",
     };
 
     let offset = ty.size_in_bytes();
@@ -562,7 +560,7 @@ where
     match ty {
         Bool => write!(
             buf,
-            "Boolean({}.{}({} + {} * {}))",
+            "Boolean({}.{}({} + {} * {}, true))",
             data_view_name,
             get_func_name,
             ptr_name,
@@ -571,7 +569,7 @@ where
         ),
         _ => write!(
             buf,
-            "{}.{}({} + {} * {})",
+            "{}.{}({} + {} * {}, true)",
             data_view_name,
             get_func_name,
             ptr_name,

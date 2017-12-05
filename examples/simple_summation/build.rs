@@ -4,7 +4,7 @@ extern crate wasm_wrapper_gen_build;
 fn main() {
     if let Err(e) = real_main() {
         eprintln!("error: {}", e);
-        std::process::exit(1);
+        ::std::process::exit(1);
     }
 }
 

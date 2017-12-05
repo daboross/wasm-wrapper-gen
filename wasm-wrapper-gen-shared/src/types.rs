@@ -44,15 +44,12 @@ impl SupportedCopyTy {
         use self::SupportedCopyTy::*;
         // not using `std::mem::size_of` since that's for the current platform, not wasm.
         match *self {
-            U8 => 1,
+            Bool | U8 => 1,
             U16 => 2,
-            U32 => 4,
-            USize => 4,
+            USize | U32 => 4,
             I8 => 1,
             I16 => 2,
-            I32 => 4,
-            ISize => 4,
-            Bool => 1,
+            ISize | I32 => 4,
             F32 => 4,
             F64 => 8,
         }
