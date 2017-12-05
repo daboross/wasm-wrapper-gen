@@ -23,4 +23,7 @@ js_fn! {
     fn sum(input: &[u32]) -> i32 => sum;
     fn product_in_place(input: &mut [u8]) => product_in_place;
     fn product_new(input: Vec<u8>) -> Vec<u8> => product_new;
+    fn float_product(input: Vec<f64>) -> f64 {
+        input.into_iter().fold(1.0, |a, b| a * b)
+    }
 }

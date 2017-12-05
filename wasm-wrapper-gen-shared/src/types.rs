@@ -7,84 +7,84 @@ use syn;
 use MacroError;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub enum SimpleIntegerTy {
+pub enum SupportedCopyTy {
     U8,
     U16,
     U32,
-    // U64, // 64-bit types aren't well supported
+    USize,
     I8,
     I16,
     I32,
-    // I64, // 64-bit types aren't well supported
-    USize,
     ISize,
+    F32,
+    F64,
     Bool,
 }
 
-impl SimpleIntegerTy {
+impl SupportedCopyTy {
     pub fn new<T: AsRef<str>>(ident: &T) -> Option<Self> {
-        use self::SimpleIntegerTy::*;
+        use self::SupportedCopyTy::*;
         match ident.as_ref() {
             "u8" => Some(U8),
             "u16" => Some(U16),
             "u32" => Some(U32),
-            // "u64" => Some(U64),
+            "usize" => Some(USize),
             "i8" => Some(I8),
             "i16" => Some(I16),
             "i32" => Some(I32),
-            // "i64" => Some(I64),
-            "usize" => Some(USize),
             "isize" => Some(ISize),
+            "f32" => Some(F32),
+            "f64" => Some(F64),
             "bool" => Some(Bool),
             _ => None,
         }
     }
 
     pub fn size_in_bytes(&self) -> usize {
-        use self::SimpleIntegerTy::*;
+        use self::SupportedCopyTy::*;
         // not using `std::mem::size_of` since that's for the current platform, not wasm.
         match *self {
             U8 => 1,
             U16 => 2,
             U32 => 4,
-            // U64 => 8,
+            USize => 4,
             I8 => 1,
             I16 => 2,
             I32 => 4,
-            // I64 => 8,
-            USize => 4,
             ISize => 4,
             Bool => 1,
+            F32 => 4,
+            F64 => 8,
         }
     }
 }
 
-impl AsRef<str> for SimpleIntegerTy {
+impl AsRef<str> for SupportedCopyTy {
     fn as_ref(&self) -> &str {
-        use self::SimpleIntegerTy::*;
+        use self::SupportedCopyTy::*;
         match *self {
             U8 => "u8",
             U16 => "u16",
             U32 => "u32",
-            // U64 => "u64",
+            USize => "usize",
             I8 => "i8",
             I16 => "i16",
             I32 => "i32",
-            // I64 => "i64",
-            USize => "usize",
             ISize => "isize",
+            F32 => "f32",
+            F64 => "f64",
             Bool => "bool",
         }
     }
 }
 
-impl fmt::Display for SimpleIntegerTy {
+impl fmt::Display for SupportedCopyTy {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.write_str(self.as_ref())
     }
 }
 
-impl ToTokens for SimpleIntegerTy {
+impl ToTokens for SupportedCopyTy {
     fn to_tokens(&self, tokens: &mut Tokens) {
         tokens.append(self.as_ref());
     }
@@ -92,13 +92,13 @@ impl ToTokens for SimpleIntegerTy {
 
 pub enum SupportedArgumentType {
     // &[u8]
-    IntegerSliceRef(SimpleIntegerTy),
+    IntegerSliceRef(SupportedCopyTy),
     // &mut [u8]
-    IntegerSliceMutRef(SimpleIntegerTy),
+    IntegerSliceMutRef(SupportedCopyTy),
     // Vec<u8>
-    IntegerVec(SimpleIntegerTy),
+    IntegerVec(SupportedCopyTy),
     // u8, u16, u32, u64, i8, i16, i32, i64, usize, isize,
-    Integer(SimpleIntegerTy),
+    Integer(SupportedCopyTy),
     // TODO: more types
 }
 
@@ -123,13 +123,13 @@ fn is_u8(ty: &syn::Ty) -> bool {
     false
 }
 
-fn as_simple_integer(ty: &syn::Ty) -> Option<SimpleIntegerTy> {
+fn as_simple_integer(ty: &syn::Ty) -> Option<SupportedCopyTy> {
     let ty = resolve_parens(ty);
     if let syn::Ty::Path(None, ref path) = *ty {
         if path.segments.len() <= 1 {
             if let Some(segment) = path.segments.first() {
                 if segment.parameters == syn::PathParameters::none() {
-                    return SimpleIntegerTy::new(&segment.ident);
+                    return SupportedCopyTy::new(&segment.ident);
                 }
             }
         }
@@ -137,7 +137,7 @@ fn as_simple_integer(ty: &syn::Ty) -> Option<SimpleIntegerTy> {
     None
 }
 
-fn as_vec_simple_integer_type(ty: &syn::Ty) -> Option<SimpleIntegerTy> {
+fn as_vec_simple_integer_type(ty: &syn::Ty) -> Option<SupportedCopyTy> {
     let ty = resolve_parens(ty);
     if let syn::Ty::Path(None, ref path) = *ty {
         if path.segments.len() <= 1 {
@@ -190,9 +190,9 @@ impl SupportedArgumentType {
 
 pub enum SupportedRetType {
     // Vec<u8>
-    IntegerVec(SimpleIntegerTy),
+    IntegerVec(SupportedCopyTy),
     // u8, u16, u32, u64, i8, i16, i32, i64, usize, isize,
-    Integer(SimpleIntegerTy),
+    Integer(SupportedCopyTy),
     // ()
     Unit,
 }

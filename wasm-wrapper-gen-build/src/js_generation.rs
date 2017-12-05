@@ -2,7 +2,7 @@ use std::fmt::Write;
 
 use failure::Error;
 
-use wasm_wrapper_gen_shared::{JsFnInfo, SimpleIntegerTy, SupportedArgumentType, SupportedRetType,
+use wasm_wrapper_gen_shared::{JsFnInfo, SupportedCopyTy, SupportedArgumentType, SupportedRetType,
                               TransformedRustIdent};
 
 use self::indented_write::WriteExt;
@@ -142,7 +142,7 @@ where
                 | SupportedArgumentType::IntegerSliceMutRef(int_ty)
                 | SupportedArgumentType::IntegerVec(int_ty) => {
                     match int_ty {
-                        SimpleIntegerTy::U8 => {
+                        SupportedCopyTy::U8 => {
                             // store length in temp variable
                             write!(buf, "let arg{0}_len = arg{0}.length;\n", i)?;
                             // allocate memory
@@ -215,7 +215,7 @@ arg{0}_view.set(arg{0});
         arg{0}[i] = "#,
                         i
                     )?;
-                    if int_ty == SimpleIntegerTy::Bool {
+                    if int_ty == SupportedCopyTy::Bool {
                         write!(buf, "Boolean(arg{0}_view[i])", i)?;
                     } else {
                         write!(buf, "arg{0}_view[i]", i)?;
@@ -231,7 +231,7 @@ arg{0}_view.set(arg{0});
                 SupportedArgumentType::Integer(_) | SupportedArgumentType::IntegerVec(_) => {}
                 SupportedArgumentType::IntegerSliceRef(int_ty)
                 | SupportedArgumentType::IntegerSliceMutRef(int_ty) => match int_ty {
-                    SimpleIntegerTy::U8 => {
+                    SupportedCopyTy::U8 => {
                         write!(buf, "this._dealloc(arg{0}_ptr, arg{0}_len);\n", i)?;
                     }
                     _ => {
@@ -245,7 +245,7 @@ arg{0}_view.set(arg{0});
             SupportedRetType::Unit => {
                 write!(buf, "return;\n")?;
             }
-            SupportedRetType::Integer(SimpleIntegerTy::Bool) => {
+            SupportedRetType::Integer(SupportedCopyTy::Bool) => {
                 write!(buf, "return Boolean(result);\n")?;
             }
             SupportedRetType::Integer(_) => {
@@ -263,12 +263,12 @@ let return_len = result_temp_view[1];
 let return_cap = result_temp_view[2];
 let return_byte_len = return_len * {2};
 let return_byte_cap = return_cap * {2};"#,
-                    SimpleIntegerTy::USize.size_in_bytes(),
-                    javascript_typed_array_for_int(SimpleIntegerTy::USize),
+                    SupportedCopyTy::USize.size_in_bytes(),
+                    javascript_typed_array_for_int(SupportedCopyTy::USize),
                     int_ty.size_in_bytes()
                 )?;
                 match int_ty {
-                    SimpleIntegerTy::Bool => {
+                    SupportedCopyTy::Bool => {
                         write!(
                             buf,
                             r#"
@@ -385,8 +385,8 @@ mod indented_write {
     impl<T: Write> WriteExt for T {}
 }
 
-fn javascript_typed_array_for_int(ty: SimpleIntegerTy) -> &'static str {
-    use self::SimpleIntegerTy::*;
+fn javascript_typed_array_for_int(ty: SupportedCopyTy) -> &'static str {
+    use self::SupportedCopyTy::*;
     match ty {
         U8 => "Uint8Array",
         U16 => "Uint16Array",
@@ -396,6 +396,8 @@ fn javascript_typed_array_for_int(ty: SimpleIntegerTy) -> &'static str {
         I32 => "Int32Array",
         USize => "Uint32Array",
         ISize => "Int32Array",
+        F32 => "Float32Array",
+        F64 => "Float64Array",
         Bool => "Uint8Array", // additional code needed to handle this case
     }
 }

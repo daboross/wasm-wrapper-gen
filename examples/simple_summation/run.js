@@ -20,6 +20,9 @@ function main() {
 
     let new_output = instance.product_new([1, 2, 3, 4, 5]);
     console.log(`[1, 2, 3, 4, 5] * 2 created new: ${new_output}`);
+
+    let float_product = instance.float_product([1.0, 1.2, 1.5, 1.6, 1.7]);
+    console.log(`[1.0, 1.2, 1.5, 1.6, 1.7] product: ${float_product}`);
 }
 
 main();
