@@ -13,11 +13,23 @@ pub fn generate_javascript<'a, 'b, I>(config: &Config, iter: &'a I) -> Result<St
 where
     &'a I: IntoIterator<Item = &'b JsFnInfo> + 'a,
 {
+    let any_alloc = iter.into_iter().any(|func| {
+        (match func.ret_ty {
+            SupportedRetType::Integer(_) | SupportedRetType::Unit => false,
+            SupportedRetType::IntegerVec(_) => true,
+        }) || (func.args_ty.iter().any(|arg_ty| match *arg_ty {
+            SupportedArgumentType::Integer(_) => false,
+            SupportedArgumentType::IntegerSliceRef(_) => true,
+            SupportedArgumentType::IntegerSliceMutRef(_) => true,
+            SupportedArgumentType::IntegerVec(_) => true,
+        }))
+    });
+
     let mut output_buffer = String::new();
     {
         let buf = &mut output_buffer;
 
-        write_class_definition_up_to_exports_grabbing(config, buf)?;
+        write_class_definition_up_to_exports_grabbing(config, buf, any_alloc)?;
 
         {
             let buf = &mut buf.indented(config.indent * 3);
@@ -26,7 +38,7 @@ where
             }
         }
 
-        write_class_definition_post_exports_grabbing_up_to_methods(config, buf)?;
+        write_class_definition_post_exports_grabbing_up_to_methods(config, buf, any_alloc)?;
 
         {
             let buf = &mut buf.indented(config.indent);
@@ -40,9 +52,24 @@ where
     Ok(output_buffer)
 }
 
+fn func_results_allocated(func: &JsFnInfo) -> bool {
+    (match func.ret_ty {
+        SupportedRetType::Unit | SupportedRetType::Integer(_) => false,
+        SupportedRetType::IntegerVec(_) => true,
+    }) || ({
+        func.args_ty.iter().any(|arg| match *arg {
+            SupportedArgumentType::Integer(_)
+            | SupportedArgumentType::IntegerSliceRef(_)
+            | SupportedArgumentType::IntegerVec(_) => false,
+            SupportedArgumentType::IntegerSliceMutRef(_) => true,
+        })
+    })
+}
+
 fn write_class_definition_up_to_exports_grabbing<T>(
     config: &Config,
     buf: &mut T,
+    any_alloc: bool,
 ) -> Result<(), Error>
 where
     T: Write,
@@ -57,25 +84,31 @@ where
                 buf,
                 "this._mod = new WebAssembly.Instance(wasm_module, {{}});\n"
             )?;
-            match config.access_style {
-                AccessStyle::TypedArrays => {
-                    write!(buf, "this._mem = this._mod.exports[\"memory\"];\n")?;
-                }
-                AccessStyle::DataView => {
-                    write!(
-                        buf,
-                        r#"this._raw_mem = this._mod.exports["memory"];
+            if any_alloc {
+                match config.access_style {
+                    AccessStyle::TypedArrays => {
+                        write!(buf, "this._mem = this._mod.exports[\"memory\"];\n")?;
+                    }
+                    AccessStyle::DataView => {
+                        write!(
+                            buf,
+                            r#"this._raw_mem = this._mod.exports["memory"];
 this._mem = new DataView(this._raw_mem.buffer);
 "#
-                    )?;
+                        )?;
+                    }
                 }
+                write!(
+                    buf,
+                    r#"
+this._alloc = this._mod.exports["__js_fn__builtin_alloc"];
+this._dealloc = this._mod.exports["__js_fn__builtin_dealloc"];
+"#
+                )?;
             }
             write!(
                 buf,
                 r#"
-this._alloc = this._mod.exports["__js_fn__builtin_alloc"];
-this._dealloc = this._mod.exports["__js_fn__builtin_dealloc"];
-
 this._funcs = {{
 "#
             )?;
@@ -101,6 +134,7 @@ where
 fn write_class_definition_post_exports_grabbing_up_to_methods<T>(
     config: &Config,
     buf: &mut T,
+    any_alloc: bool,
 ) -> Result<(), Error>
 where
     T: Write,
@@ -110,21 +144,23 @@ where
     match config.access_style {
         AccessStyle::TypedArrays => {}
         AccessStyle::DataView => {
-            let buf = &mut buf.indented(config.indent);
-            write!(buf, "\n_check_mem_realloc() {{\n")?;
-            {
+            if any_alloc {
                 let buf = &mut buf.indented(config.indent);
-                write!(
-                    buf,
-                    "if (this._mem.byteLength != this._raw_mem.byteLength) {{\n"
-                )?;
-                write!(
-                    buf.indented(config.indent),
-                    "this._mem = new DataView(this._raw_mem.buffer);\n"
-                )?;
+                write!(buf, "\n_check_mem_realloc() {{\n")?;
+                {
+                    let buf = &mut buf.indented(config.indent);
+                    write!(
+                        buf,
+                        "if (this._mem.byteLength != this._raw_mem.byteLength) {{\n"
+                    )?;
+                    write!(
+                        buf.indented(config.indent),
+                        "this._mem = new DataView(this._raw_mem.buffer);\n"
+                    )?;
+                    write!(buf, "}}\n")?;
+                }
                 write!(buf, "}}\n")?;
             }
-            write!(buf, "}}\n")?;
         }
     }
     Ok(())
@@ -380,7 +416,7 @@ where
         }
 
         write!(buf, ");\n")?;
-        if config.access_style == AccessStyle::DataView {
+        if config.access_style == AccessStyle::DataView && func_results_allocated(info) {
             write!(buf, "this._check_mem_realloc();\n")?;
         }
 

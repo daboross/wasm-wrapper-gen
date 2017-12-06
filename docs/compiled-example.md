@@ -130,7 +130,6 @@ class Fibonacci {
             throw new Error();
         }
         let result = this._funcs['fib'](arg0);
-        this._check_mem_realloc();
         return result;
     }
 
