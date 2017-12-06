@@ -53,10 +53,10 @@ authors = ["David Ross <daboross@daboross.net>"]
 crate-type = ["cdylib"]
 
 [dependencies]
-wasm-wrapper-gen = { version = "0.0.2", path = "../../" }
+wasm-wrapper-gen = { version = "0.0.3", path = "../../" }
 
 [build-dependencies]
-wasm-wrapper-gen-build = { version = "0.0.2", path = "../../wasm-wrapper-gen-build/" }
+wasm-wrapper-gen-build = { version = "0.0.3", path = "../../wasm-wrapper-gen-build/" }
 ```
 
 And finally, usage from within node.js:

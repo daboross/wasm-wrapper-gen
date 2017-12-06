@@ -1,6 +1,6 @@
 [package]
 name = "wasm-wrapper-gen-build"
-version = "0.0.2"
+version = "0.0.3"
 authors = ["David Ross <daboross@daboross.net>"]
 description = "JavaScript-wrapper generation for rust code targeting wasm32-unknown-unknown (build-script side)"
 
@@ -14,6 +14,6 @@ categories = ["development-tools::ffi"]
 include = ["Cargo.toml", "src/**/*", "README.md"]
 
 [dependencies]
-wasm-wrapper-gen-shared = { version = "0.0.2", path = "../wasm-wrapper-gen-shared" }
+wasm-wrapper-gen-shared = { version = "0.0.3", path = "../wasm-wrapper-gen-shared" }
 syn = { version = "0.11", features = ["full"] }
 failure = "0.1"

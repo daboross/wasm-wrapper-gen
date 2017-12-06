@@ -1,6 +1,6 @@
 [package]
 name = "wasm-wrapper-gen"
-version = "0.0.2"
+version = "0.0.3"
 authors = ["David Ross <daboross@daboross.net>"]
 description = "JavaScript wrapper generation for rust code targeting wasm32-unknown-unknown"
 
@@ -15,4 +15,4 @@ include = ["Cargo.toml", "src/**/*", "LICENSE", "README.md"]
 
 [dependencies]
 proc-macro-hack = "0.4"
-wasm-wrapper-gen-impl = { version = "0.0.2", path = "wasm-wrapper-gen-impl" }
+wasm-wrapper-gen-impl = { version = "0.0.3", path = "wasm-wrapper-gen-impl" }

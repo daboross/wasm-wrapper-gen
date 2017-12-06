@@ -1,6 +1,6 @@
 [package]
 name = "wasm-wrapper-gen-impl"
-version = "0.0.2"
+version = "0.0.3"
 authors = ["David Ross <daboross@daboross.net>"]
 description = "Lower-level implementation detail of wasm-wrapper-gen"
 
@@ -12,7 +12,7 @@ license = "MIT"
 include = ["Cargo.toml", "src/**/*", "README.md"]
 
 [dependencies]
-wasm-wrapper-gen-shared = { version = "0.0.2", path = "../wasm-wrapper-gen-shared" }
+wasm-wrapper-gen-shared = { version = "0.0.3", path = "../wasm-wrapper-gen-shared" }
 proc-macro-hack = "0.4"
 syn = { version = "0.11", features = ["full"] }
 quote = "0.3"
