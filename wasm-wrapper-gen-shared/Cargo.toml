@@ -9,6 +9,8 @@ readme = "README.md"
 
 license = "MIT"
 
+include = ["Cargo.toml", "src/**/*", "README.md"]
+
 [dependencies]
 proc-macro-hack = "0.4"
 syn = { version = "0.11", features = ["full"] }

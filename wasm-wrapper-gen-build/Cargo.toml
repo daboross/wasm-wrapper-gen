@@ -11,6 +11,8 @@ license = "MIT"
 keywords = ["code-generation", "bindings", "javascript", "wasm"]
 categories = ["development-tools::ffi"]
 
+include = ["Cargo.toml", "src/**/*", "README.md"]
+
 [dependencies]
 wasm-wrapper-gen-shared = { version = "0.0.2", path = "../wasm-wrapper-gen-shared" }
 syn = { version = "0.11", features = ["full"] }

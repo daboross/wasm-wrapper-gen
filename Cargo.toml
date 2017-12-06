@@ -11,6 +11,8 @@ license = "MIT"
 keywords = ["code-generation", "bindings", "javascript", "wasm"]
 categories = ["development-tools::ffi"]
 
+include = ["Cargo.toml", "src/**/*", "LICENSE", "README.md"]
+
 [dependencies]
 proc-macro-hack = "0.4"
 wasm-wrapper-gen-impl = { version = "0.0.2", path = "wasm-wrapper-gen-impl" }

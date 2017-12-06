@@ -9,6 +9,8 @@ readme = "README.md"
 
 license = "MIT"
 
+include = ["Cargo.toml", "src/**/*", "README.md"]
+
 [dependencies]
 wasm-wrapper-gen-shared = { version = "0.0.2", path = "../wasm-wrapper-gen-shared" }
 proc-macro-hack = "0.4"
