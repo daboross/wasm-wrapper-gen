@@ -1,3 +1,6 @@
+mod stats;
+
+use self::stats::FuncStats;
 use std::fmt::{self, Display, Write};
 
 use failure::Error;
@@ -13,17 +16,16 @@ pub fn generate_javascript<'a, 'b, I>(config: &Config, iter: &'a I) -> Result<St
 where
     &'a I: IntoIterator<Item = &'b JsFnInfo> + 'a,
 {
-    let any_alloc = iter.into_iter().any(|func| {
-        (match func.ret_ty {
-            SupportedRetType::Integer(_) | SupportedRetType::Unit => false,
-            SupportedRetType::IntegerVec(_) => true,
-        }) || (func.args_ty.iter().any(|arg_ty| match *arg_ty {
-            SupportedArgumentType::Integer(_) => false,
-            SupportedArgumentType::IntegerSliceRef(_) => true,
-            SupportedArgumentType::IntegerSliceMutRef(_) => true,
-            SupportedArgumentType::IntegerVec(_) => true,
-        }))
-    });
+    let mut any_alloc = false;
+    let func_stats = iter.into_iter()
+        .map(|info| {
+            let stat = FuncStats::new(info);
+            if stat.uses_memory_access {
+                any_alloc = true;
+            }
+            stat
+        })
+        .collect::<Vec<_>>();
 
     let mut output_buffer = String::new();
     {
@@ -33,8 +35,8 @@ where
 
         {
             let buf = &mut buf.indented(config.indent * 3);
-            for info in iter {
-                write_func_unexport(buf, info)?;
+            for stat in &func_stats {
+                write_func_unexport(buf, stat.inner, stat)?;
             }
         }
 
@@ -42,28 +44,14 @@ where
 
         {
             let buf = &mut buf.indented(config.indent);
-            for info in iter {
-                write_method(config, buf, info)?;
+            for stat in &func_stats {
+                write_method(config, buf, stat.inner, stat)?;
             }
         }
 
         write_class_definition_finish(config, buf)?;
     }
     Ok(output_buffer)
-}
-
-fn func_results_allocated(func: &JsFnInfo) -> bool {
-    (match func.ret_ty {
-        SupportedRetType::Unit | SupportedRetType::Integer(_) => false,
-        SupportedRetType::IntegerVec(_) => true,
-    }) || ({
-        func.args_ty.iter().any(|arg| match *arg {
-            SupportedArgumentType::Integer(_)
-            | SupportedArgumentType::IntegerSliceRef(_)
-            | SupportedArgumentType::IntegerVec(_) => false,
-            SupportedArgumentType::IntegerSliceMutRef(_) => true,
-        })
-    })
 }
 
 fn write_class_definition_up_to_exports_grabbing<T>(
@@ -117,7 +105,7 @@ this._funcs = {{
     Ok(())
 }
 
-fn write_func_unexport<T>(buf: &mut T, info: &JsFnInfo) -> Result<(), Error>
+fn write_func_unexport<T>(buf: &mut T, info: &JsFnInfo, _stats: &FuncStats) -> Result<(), Error>
 where
     T: Write,
 {
@@ -275,6 +263,38 @@ where
     Ok(())
 }
 
+fn reconstruct_typed_array_if_memory_changed<T, U, V, W>(
+    config: &Config,
+    buf: &mut T,
+    view_name: U,
+    ptr_name: V,
+    length_name: W,
+    ty: SupportedCopyTy,
+) -> fmt::Result
+where
+    T: Write,
+    U: Display,
+    V: Display,
+    W: Display,
+{
+    write!(
+        buf,
+        "if ({0}.buffer.byteLength != this._mem.buffer.byteLength) {{\n",
+        view_name
+    )?;
+    write!(
+        buf.indented(config.indent),
+        "{0} = new {1}(this._mem.buffer, {2}, {3});\n",
+        view_name,
+        javascript_typed_array_for_int(ty),
+        ptr_name,
+        length_name
+    )?;
+    write!(buf, "}}\n")?;
+
+    Ok(())
+}
+
 fn propogate_argument_changes_outwards<T, U>(
     config: &Config,
     buf: &mut T,
@@ -291,18 +311,14 @@ where
             // propagate modifications outwards.
             match config.access_style {
                 AccessStyle::TypedArrays => {
-                    write!(
+                    reconstruct_typed_array_if_memory_changed(
+                        config,
                         buf,
-                        "if ({0}_view.buffer.byteLength != this._mem.buffer.byteLength) {{\n",
-                        arg_name
+                        format_args!("{}_view", arg_name),
+                        format_args!("{}_ptr", arg_name),
+                        format_args!("{}_byte_len", arg_name),
+                        int_ty,
                     )?;
-                    write!(
-                        buf.indented(config.indent),
-                        "{0}_view = new {1}(this._mem.buffer, {0}_ptr, {0}_byte_len);\n",
-                        arg_name,
-                        javascript_typed_array_for_int(int_ty)
-                    )?;
-                    write!(buf, "}}\n")?;
                     write!(buf, "if (typeof {0}.set == 'function') {{", arg_name)?;
                     write!(
                         buf.indented(config.indent),
@@ -362,7 +378,235 @@ where
     Ok(())
 }
 
-fn write_method<T>(config: &Config, buf: &mut T, info: &JsFnInfo) -> Result<(), Error>
+fn read_three_usize_array<T, U, V, W, X, Y>(
+    config: &Config,
+    buf: &mut T,
+    ptr_name: U,
+    temp_prefix: V,
+    item1: W,
+    item2: X,
+    item3: Y,
+) -> fmt::Result
+where
+    T: Write,
+    U: Display,
+    V: Display,
+    W: Display,
+    X: Display,
+    Y: Display,
+{
+    match config.access_style {
+        AccessStyle::TypedArrays => {
+            write!(
+                buf,
+                r#"let {0}_view = new {2}(this._mem.buffer, {3}, {1});
+let {4} = {0}_view[0];
+let {5} = {0}_view[1];
+let {6} = {0}_view[2];
+"#,
+                temp_prefix,
+                3 * SupportedCopyTy::USize.size_in_bytes(),
+                javascript_typed_array_for_int(SupportedCopyTy::USize),
+                ptr_name,
+                item1,
+                item2,
+                item3
+            )?;
+        }
+        AccessStyle::DataView => {
+            write!(
+                buf,
+                r#"
+let {3} = this._mem.getUint32({0}, true);
+let {4} = this._mem.getUint32({0} + {1}, true);
+let {5} = this._mem.getUint32({0} + {2}, true);
+"#,
+                ptr_name,
+                SupportedCopyTy::USize.size_in_bytes(),
+                SupportedCopyTy::USize.size_in_bytes() * 2,
+                item1,
+                item2,
+                item3
+            )?;
+        }
+    }
+
+    Ok(())
+}
+fn dealloc_three_usize_array<T, U>(_config: &Config, buf: &mut T, ptr_name: U) -> fmt::Result
+where
+    T: Write,
+    U: Display,
+{
+    write!(
+        buf,
+        "this._dealloc({0}, {1});\n",
+        ptr_name,
+        SupportedCopyTy::USize.size_in_bytes() * 3
+    )
+}
+
+fn copy_array_out<T, U, V, W, X, Y>(
+    config: &Config,
+    buf: &mut T,
+    ptr_name: U,
+    length_name: V,
+    byte_length_name: W,
+    temp_name: X,
+    result_name: Y,
+    int_ty: SupportedCopyTy,
+) -> fmt::Result
+where
+    T: Write,
+    U: Display,
+    V: Display,
+    W: Display,
+    X: Display,
+    Y: Display,
+{
+    match (config.access_style, int_ty) {
+        (AccessStyle::TypedArrays, SupportedCopyTy::Bool) => {
+            write!(
+                buf,
+                r#"let {0}_view = new {3}(this._mem.buffer, return_ptr, {4});
+let {2} = [];
+for (var {0}_i = 0; {0}_i < {1}; {0}_i++) {{
+"#,
+                temp_name,
+                length_name,
+                result_name,
+                javascript_typed_array_for_int(int_ty),
+                byte_length_name,
+            )?;
+            write!(
+                buf.indented(config.indent),
+                "{1}.push(Boolean({0}_view[{0}_i]));\n",
+                temp_name,
+                result_name,
+            )?;
+            write!(buf, r"}}\n")?;
+        }
+        (AccessStyle::TypedArrays, _) => {
+            write!(
+                buf,
+                r#"let {0} = {3}.from(new {3}(this._mem.buffer, {1}, {2}));
+"#,
+                result_name,
+                ptr_name,
+                byte_length_name,
+                javascript_typed_array_for_int(int_ty)
+            )?;
+        }
+        (AccessStyle::DataView, _) => {
+            write!(
+                buf,
+                r#"let {0} = [];
+for (var {1}_i = 0; {1}_i < {2}; {1}_i++) {{
+"#,
+                result_name,
+                temp_name,
+                length_name,
+            )?;
+            {
+                let mut buf = buf.indented(config.indent);
+                write!(buf, "{0}.push(", result_name)?;
+                js_get_ith_ty_at(
+                    &mut buf,
+                    "this._mem",
+                    int_ty,
+                    ptr_name,
+                    format_args!("{}_i", temp_name),
+                )?;
+                write!(buf, ");\n")?;
+            }
+            write!(buf, "}}\n")?;
+        }
+    }
+    Ok(())
+}
+
+fn read_return_value_copy_into<T, U, V>(
+    config: &Config,
+    buf: &mut T,
+    ty: &SupportedRetType,
+    from_var: U,
+    to_var: V,
+) -> fmt::Result
+where
+    T: Write,
+    U: Display,
+    V: Display,
+{
+    match *ty {
+        SupportedRetType::Unit => {
+            write!(buf, "let {} = {};\n", to_var, from_var)?;
+        }
+        SupportedRetType::Integer(SupportedCopyTy::Bool) => {
+            write!(buf, "let {} = Boolean({});\n", to_var, from_var)?;
+        }
+        SupportedRetType::Integer(_) => {
+            write!(buf, "let {} = {};\n", to_var, from_var)?;
+        }
+        SupportedRetType::IntegerVec(int_ty) => {
+            read_three_usize_array(
+                config,
+                buf,
+                "result",
+                "result_temp",
+                "return_ptr",
+                "return_len",
+                "return_cap",
+            )?;
+            write!(
+                buf,
+                r#"let return_byte_len = return_len * {0};
+let return_byte_cap = return_cap * {0};
+"#,
+                int_ty.size_in_bytes()
+            )?;
+            copy_array_out(
+                config,
+                buf,
+                "return_ptr",
+                "return_len",
+                "return_byte_len",
+                "return_tmp",
+                to_var,
+                int_ty,
+            )?;
+        }
+    }
+
+    Ok(())
+}
+
+fn deallocate_return_allocation<T, U>(
+    config: &Config,
+    buf: &mut T,
+    from_var: U,
+    ty: &SupportedRetType,
+) -> fmt::Result
+where
+    T: Write,
+    U: Display,
+{
+    match *ty {
+        SupportedRetType::Unit | SupportedRetType::Integer(_) => {}
+        SupportedRetType::IntegerVec(_) => {
+            write!(buf, "this._dealloc(return_ptr, return_byte_cap);\n")?;
+            dealloc_three_usize_array(config, buf, from_var)?;
+        }
+    }
+
+    Ok(())
+}
+
+fn write_method<T>(
+    config: &Config,
+    buf: &mut T,
+    info: &JsFnInfo,
+    stats: &FuncStats,
+) -> Result<(), Error>
 where
     T: Write,
 {
@@ -416,120 +660,23 @@ where
         }
 
         write!(buf, ");\n")?;
-        if config.access_style == AccessStyle::DataView && func_results_allocated(info) {
+        if config.access_style == AccessStyle::DataView && stats.uses_post_function_memory_access {
             write!(buf, "this._check_mem_realloc();\n")?;
         }
 
-        // cleanup (deallocation)
         for (i, &ty) in info.args_ty.iter().enumerate() {
             propogate_argument_changes_outwards(config, buf, format_args!("arg{}", i), ty)?;
+        }
+
+        read_return_value_copy_into(config, buf, &info.ret_ty, "result", "return_value")?;
+
+        for (i, &ty) in info.args_ty.iter().enumerate() {
             deallocate_argument_allocation(config, buf, format_args!("arg{}", i), ty)?;
         }
 
-        match info.ret_ty {
-            SupportedRetType::Unit => {
-                write!(buf, "return;\n")?;
-            }
-            SupportedRetType::Integer(SupportedCopyTy::Bool) => {
-                write!(buf, "return Boolean(result);\n")?;
-            }
-            SupportedRetType::Integer(_) => {
-                write!(buf, "return result;\n")?;
-            }
-            SupportedRetType::IntegerVec(int_ty) => match config.access_style {
-                AccessStyle::TypedArrays => {
-                    write!(
-                        buf,
-                        r#"let result_temp_ptr = result;
-let result_temp_len = 3;
-let result_temp_byte_len = result_temp_len * {0};
-let result_temp_view = new {1}(this._mem.buffer, result, result_temp_byte_len);
-let return_ptr = result_temp_view[0];
-let return_len = result_temp_view[1];
-let return_cap = result_temp_view[2];
-let return_byte_len = return_len * {2};
-let return_byte_cap = return_cap * {2};"#,
-                        SupportedCopyTy::USize.size_in_bytes(),
-                        javascript_typed_array_for_int(SupportedCopyTy::USize),
-                        int_ty.size_in_bytes()
-                    )?;
-                    match int_ty {
-                        SupportedCopyTy::Bool => {
-                            write!(
-                                buf,
-                                r#"
-let return_view = new {0}(this._mem.buffer, return_ptr, return_byte_len);
-let return_value_copy = [];
-for (var ret_i = 0; ret_i < return_len; ret_i++) {{
-"#,
-                                javascript_typed_array_for_int(int_ty)
-                            )?;
-                            write!(
-                                buf.indented(config.indent),
-                                "return_value_copy.push(Boolean(return_view[ret_i]));\n"
-                            )?;
-                            write!(
-                                buf,
-                                r#"}}
-"#,
-                            )?;
-                        }
-                        _ => {
-                            write!(
-                                buf,
-                                r#"
-let return_value_copy = {0}.from(new {0}(this._mem.buffer, return_ptr, return_byte_len));
-"#,
-                                javascript_typed_array_for_int(int_ty)
-                            )?;
-                        }
-                    }
-                    write!(
-                        buf,
-                        r#"
-this._dealloc(return_ptr, return_byte_cap);
-this._dealloc(result_temp_ptr, result_temp_byte_len);
-return return_value_copy;
-"#
-                    )?;
-                }
-                AccessStyle::DataView => {
-                    write!(
-                        buf,
-                        r#"let result_temp_ptr = result;
-let return_ptr = this._mem.getUint32(result_temp_ptr, true);
-let return_len = this._mem.getUint32(result_temp_ptr + {0}, true);
-let return_cap = this._mem.getUint32(result_temp_ptr + {1}, true);
-let return_byte_len = return_len * {2};
-let return_byte_cap = return_cap * {2};
-let return_value_copy = [];
-for (var ret_i = 0; ret_i < return_len; ret_i++) {{
-"#,
-                        SupportedCopyTy::USize.size_in_bytes(),
-                        SupportedCopyTy::USize.size_in_bytes() * 2,
-                        int_ty.size_in_bytes(),
-                    )?;
-                    {
-                        let mut buf = buf.indented(config.indent);
-                        write!(buf, "return_value_copy.push(")?;
-                        js_get_ith_ty_at(&mut buf, "this._mem", int_ty, "return_ptr", "ret_i")?;
-                        write!(buf, ");\n")?;
-                    }
-                    write!(
-                        buf,
-                        r#"}}
-this._dealloc(return_ptr, return_byte_cap);
-this._dealloc(result_temp_ptr, {0});
-return return_value_copy;
-"#,
-                        SupportedCopyTy::USize.size_in_bytes() * 3
-                    )?;
-                }
-            },
-        }
+        deallocate_return_allocation(config, buf, "result", &info.ret_ty)?;
 
-        // TODO: handle return values (we can eventually do this by allocating
-        // a Box<(*const ptr, usize)> of memory to store a (ptr, len) for the &[u8] returned)
+        write!(buf, "return return_value;\n")?;
     }
 
     write!(buf, "}}\n")?;

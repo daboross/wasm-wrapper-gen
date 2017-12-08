@@ -4,7 +4,7 @@ extern crate syn;
 extern crate wasm_wrapper_gen_shared;
 
 mod source_searching;
-mod js_generation;
+mod generation;
 mod style;
 
 use std::path::Path;
@@ -65,5 +65,5 @@ fn translate_source(source: &str, config: &Config) -> Result<String, Error> {
         .map(|item| JsFnInfo::try_from(&item))
         .collect::<Result<Vec<_>, _>>()?;
 
-    Ok(js_generation::generate_javascript(config, &js_fn_infos)?)
+    Ok(generation::generate_javascript(config, &js_fn_infos)?)
 }
