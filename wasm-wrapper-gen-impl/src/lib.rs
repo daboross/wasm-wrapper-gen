@@ -164,7 +164,7 @@ fn expand_argument_into(
             let ptr_arg_name = arg_name.with_suffix("_ptr");
             let length_arg_name = arg_name.with_suffix("_len");
             tokens.append(quote! {
-                #ptr_arg_name: *mut u8,
+                #ptr_arg_name: *mut u16,
                 #length_arg_name: usize,
             })
         }
@@ -234,11 +234,13 @@ fn setup_for_argument(
             let ptr_arg_name = arg_name.with_suffix("_ptr");
             let length_arg_name = arg_name.with_suffix("_len");
             quote! {
-                let #arg_name: String = ::std::string::String::from_utf16_lossy(&::std::vec::Vec::<u16>::from_raw_parts(
-                    #ptr_arg_name,
-                    #length_arg_name,
-                    #length_arg_name
-                ));
+                let #arg_name: String = ::std::string::String::from_utf16_lossy(&unsafe {
+                    ::std::vec::Vec::<u16>::from_raw_parts(
+                        #ptr_arg_name,
+                        #length_arg_name,
+                        #length_arg_name
+                    )
+                });
                 // TODO: configure non-lossy UTF16 handling (maybe through accepting Result? or erroring?)
             }
         }
