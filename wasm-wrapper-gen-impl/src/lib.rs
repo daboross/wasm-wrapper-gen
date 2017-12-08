@@ -1,3 +1,4 @@
+#![recursion_limit="128"]
 extern crate arrayvec;
 #[macro_use]
 extern crate failure;
@@ -159,6 +160,14 @@ fn expand_argument_into(
                 #length_arg_name: usize,
             });
         }
+        SupportedArgumentType::OwnedString => {
+            let ptr_arg_name = arg_name.with_suffix("_ptr");
+            let length_arg_name = arg_name.with_suffix("_len");
+            tokens.append(quote! {
+                #ptr_arg_name: *mut u8,
+                #length_arg_name: usize,
+            })
+        }
         SupportedArgumentType::Integer(int_ty) => tokens.append(quote! {
             #arg_name: #int_ty,
         }),
@@ -178,6 +187,9 @@ impl quote::ToTokens for WrittenReturnType {
             }
             SupportedRetType::IntegerVec(_) => {
                 tokens.append(quote! { -> *const usize });
+            }
+            SupportedRetType::StringSlice| SupportedRetType::OwnedString => {
+                tokens.append(quote! { -> *const usize })
             }
         }
     }
@@ -218,6 +230,18 @@ fn setup_for_argument(
             }
         }
         SupportedArgumentType::Integer(_) => quote::Tokens::new(), // no setup for simple integers
+        SupportedArgumentType::OwnedString => {
+            let ptr_arg_name = arg_name.with_suffix("_ptr");
+            let length_arg_name = arg_name.with_suffix("_len");
+            quote! {
+                let #arg_name: String = ::std::string::String::from_utf16_lossy(&::std::vec::Vec::<u16>::from_raw_parts(
+                    #ptr_arg_name,
+                    #length_arg_name,
+                    #length_arg_name
+                ));
+                // TODO: configure non-lossy UTF16 handling (maybe through accepting Result? or erroring?)
+            }
+        }
     };
 
     Ok(tokens)
@@ -234,6 +258,20 @@ fn return_handling(ty: &SupportedRetType) -> Result<quote::Tokens, Error> {
                     let result_cap = result.capacity();
                     let to_return = Box::new([result_ptr as usize, result_len, result_cap]);
                     ::std::mem::forget(result);
+                    ::std::boxed::Box::into_raw(to_return) as *const usize
+                }
+            }
+        }
+        SupportedRetType::OwnedString | SupportedRetType::StringSlice => {
+            quote! {
+                // TODO: remove duplicate between here and above.
+                {
+                    let result_utf16: Vec<u16> = result.encode_utf16().collect();
+                    let result_ptr = result_utf16.as_slice().as_ptr() as *mut u16;
+                    let result_len = result_utf16.len();
+                    let result_cap = result_utf16.capacity();
+                    let to_return = Box::new([result_ptr as usize, result_len, result_cap]);
+                    ::std::mem::forget(result_utf16);
                     ::std::boxed::Box::into_raw(to_return) as *const usize
                 }
             }

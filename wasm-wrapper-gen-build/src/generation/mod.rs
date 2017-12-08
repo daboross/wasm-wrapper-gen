@@ -174,6 +174,11 @@ where
             write!(buf.indented(config.indent), "{}\n", failure)?;
             write!(buf, "}}\n")?;
         }
+        SupportedArgumentType::OwnedString => {
+            write!(buf, "if ({0} == null) {{\n", arg_name)?;
+            write!(buf.indented(config.indent), "{}\n", failure)?;
+            write!(buf, "}}\n")?;
+        }
         SupportedArgumentType::Integer(_) => {
             write!(buf, "if (isNaN({0})) {{\n", arg_name)?;
             write!(buf.indented(config.indent), "{}\n", failure)?;
@@ -197,44 +202,101 @@ where
     match ty {
         SupportedArgumentType::IntegerSliceRef(int_ty)
         | SupportedArgumentType::IntegerSliceMutRef(int_ty)
-        | SupportedArgumentType::IntegerVec(int_ty) => match config.access_style {
-            AccessStyle::TypedArrays => {
-                write!(
-                    buf,
-                    r#"let {0}_len = {0}.length;
+        | SupportedArgumentType::IntegerVec(int_ty) => {
+            write!(
+                buf,
+                r#"let {0}_len = {0}.length;
 let {0}_byte_len = {0}_len * {1};
 let {0}_ptr = this._alloc({0}_byte_len);
-let {0}_view = new {2}(this._mem.buffer, {0}_ptr, {0}_byte_len);
+"#,
+                arg_name,
+                int_ty.size_in_bytes(),
+            )?;
+            match config.access_style {
+                AccessStyle::TypedArrays => {
+                    write!(
+                        buf,
+                        r#"let {0}_view = new {1}(this._mem.buffer, {0}_ptr, {0}_byte_len);
 {0}_view.set({0});
 "#,
-                    arg_name,
-                    int_ty.size_in_bytes(),
-                    javascript_typed_array_for_int(int_ty)
-                )?;
-            }
-            AccessStyle::DataView => {
-                write!(
-                    buf,
-                    r#"let {0}_len = {0}.length;
-let {0}_byte_len = {0}_len * {1};
-let {0}_ptr = this._alloc({0}_byte_len);
-this._check_mem_realloc();
+                        arg_name,
+                        javascript_typed_array_for_int(int_ty)
+                    )?;
+                }
+                AccessStyle::DataView => {
+                    write!(
+                        buf,
+                        r#"this._check_mem_realloc();
 for (var {0}_i = 0; {0}_i < {0}_len; {0}_i++) {{
 "#,
-                    arg_name,
-                    int_ty.size_in_bytes()
-                )?;
-                js_set_ith_ty_at(
-                    buf.indented(config.indent),
-                    "this._mem",
-                    int_ty,
-                    format_args!("{0}_ptr", arg_name),
-                    format_args!("{0}_i", arg_name),
-                    format_args!("{0}[{0}_i]", arg_name),
-                )?;
-                write!(buf, "}}\n")?;
+                        arg_name,
+                    )?;
+                    js_set_ith_ty_at(
+                        buf.indented(config.indent),
+                        "this._mem",
+                        int_ty,
+                        format_args!("{0}_ptr", arg_name),
+                        format_args!("{0}_i", arg_name),
+                        format_args!("{0}[{0}_i]", arg_name),
+                    )?;
+                    write!(buf, "}}\n")?;
+                }
             }
-        },
+        }
+        SupportedArgumentType::OwnedString => {
+            // TODO: test if this handles unicode correctly!
+            write!(
+                buf,
+                r#"let {0}_str = String({0});
+let {0}_len = {0}_str.length;
+let {0}_byte_len = {0}_len * {1};
+let {0}_ptr = this._alloc({0}_byte_len);
+"#,
+                arg_name,
+                SupportedCopyTy::U16.size_in_bytes(),
+            )?;
+            match config.access_style {
+                AccessStyle::TypedArrays => {
+                    write!(
+                        buf,
+                        "let {0}_view = new {1}(this._mem.buffer, {0}_ptr, {0}_byte_len);\n",
+                        arg_name,
+                        javascript_typed_array_for_int(SupportedCopyTy::U16),
+                    )?;
+                }
+                AccessStyle::DataView => {
+                    write!(buf, "this._check_mem_realloc();\n")?;
+                }
+            }
+            write!(
+                buf,
+                "for (var {0}_i = 0; {0}_i < {0}_len; {0}_i++) {{\n",
+                arg_name
+            )?;
+            {
+                let buf = &mut buf.indented(config.indent);
+                match config.access_style {
+                    AccessStyle::TypedArrays => {
+                        write!(
+                            buf,
+                            "{0}_view[{0}_i] = {0}_str.charCodeAt({0}_i);",
+                            arg_name
+                        )?;
+                    }
+                    AccessStyle::DataView => {
+                        js_set_ith_ty_at(
+                            buf,
+                            "this._mem",
+                            SupportedCopyTy::U16,
+                            format_args!("{0}_ptr", arg_name),
+                            format_args!("{0}_i", arg_name),
+                            format_args!("{0}_str.charCodeAt({0}_i)", arg_name),
+                        )?;
+                    }
+                }
+            }
+            write!(buf, "}}\n")?;
+        }
         SupportedArgumentType::Integer(_) => {} // no allocation needed for integers.
     }
 
@@ -255,7 +317,8 @@ where
     match ty {
         SupportedArgumentType::Integer(_) | SupportedArgumentType::IntegerVec(_) => {}
         SupportedArgumentType::IntegerSliceRef(_)
-        | SupportedArgumentType::IntegerSliceMutRef(_) => {
+        | SupportedArgumentType::IntegerSliceMutRef(_)
+        | SupportedArgumentType::OwnedString => {
             write!(buf, "this._dealloc({0}_ptr, {0}_byte_len);\n", arg_name)?;
         }
     }
@@ -372,7 +435,8 @@ where
         }
         SupportedArgumentType::IntegerSliceRef(_)
         | SupportedArgumentType::IntegerVec(_)
-        | SupportedArgumentType::Integer(_) => {}
+        | SupportedArgumentType::Integer(_)
+        | SupportedArgumentType::OwnedString => {}
     }
 
     Ok(())
@@ -525,6 +589,66 @@ for (var {1}_i = 0; {1}_i < {2}; {1}_i++) {{
     Ok(())
 }
 
+fn copy_string_out<T, U, V, W, X, Y>(
+    config: &Config,
+    buf: &mut T,
+    ptr_name: U,
+    length_name: V,
+    byte_length_name: W,
+    temp_name: X,
+    result_name: Y,
+) -> fmt::Result
+where
+    T: Write,
+    U: Display,
+    V: Display,
+    W: Display,
+    X: Display,
+    Y: Display,
+{
+    if config.access_style == AccessStyle::TypedArrays {
+        write!(
+            buf,
+            "let {0}_view = new {1}(this._mem.buffer, return_ptr, {2});\n",
+            temp_name,
+            javascript_typed_array_for_int(SupportedCopyTy::U16),
+            byte_length_name
+        )?;
+    }
+
+    write!(
+        buf,
+        r#"let {2} = "";
+for (var {0}_i = 0; {0}_i < {1}; {0}_i++) {{
+"#,
+        temp_name,
+        length_name,
+        result_name
+    )?;
+    {
+        let mut buf = buf.indented(config.indent);
+        write!(buf, "{0} += String.fromCharCode(", result_name)?;
+        match config.access_style {
+            AccessStyle::TypedArrays => {
+                write!(buf, "{0}_view[{0}_i]", temp_name)?;
+            }
+            AccessStyle::DataView => {
+                js_get_ith_ty_at(
+                    &mut buf,
+                    "this._mem",
+                    SupportedCopyTy::U16,
+                    ptr_name,
+                    format_args!("{0}_i", temp_name),
+                )?;
+            }
+        }
+        write!(buf, ");\n")?;
+    }
+    write!(buf, "}}\n")?;
+
+    Ok(())
+}
+
 fn read_return_value_copy_into<T, U, V>(
     config: &Config,
     buf: &mut T,
@@ -575,6 +699,33 @@ let return_byte_cap = return_cap * {0};
                 int_ty,
             )?;
         }
+        SupportedRetType::OwnedString | SupportedRetType::StringSlice => {
+            read_three_usize_array(
+                config,
+                buf,
+                "result",
+                "result_temp",
+                "return_ptr",
+                "return_len",
+                "return_cap",
+            )?;
+            write!(
+                buf,
+                r#"let return_byte_len = return_len * {0};
+let return_byte_cap = return_cap * {0};
+"#,
+                SupportedCopyTy::U16.size_in_bytes()
+            )?;
+            copy_string_out(
+                config,
+                buf,
+                "return_ptr",
+                "return_len",
+                "return_byte_len",
+                "return_tmp",
+                to_var,
+            )?;
+        }
     }
 
     Ok(())
@@ -592,7 +743,11 @@ where
 {
     match *ty {
         SupportedRetType::Unit | SupportedRetType::Integer(_) => {}
-        SupportedRetType::IntegerVec(_) => {
+        // StringSlice as well because the actual returned value is still a new vec
+        // (this is because of translation to utf16)
+        SupportedRetType::IntegerVec(_)
+        | SupportedRetType::OwnedString
+        | SupportedRetType::StringSlice => {
             write!(buf, "this._dealloc(return_ptr, return_byte_cap);\n")?;
             dealloc_three_usize_array(config, buf, from_var)?;
         }
@@ -649,7 +804,8 @@ where
             match ty {
                 SupportedArgumentType::IntegerSliceRef(_)
                 | SupportedArgumentType::IntegerSliceMutRef(_)
-                | SupportedArgumentType::IntegerVec(_) => {
+                | SupportedArgumentType::IntegerVec(_)
+                | SupportedArgumentType::OwnedString => {
                     write!(buf, "arg{0}_ptr, arg{0}_len", i)?;
                 }
                 SupportedArgumentType::Integer(_) => {

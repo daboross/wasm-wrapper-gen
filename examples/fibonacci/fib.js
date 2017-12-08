@@ -12,6 +12,9 @@ function main() {
     console.log(`fib(2): ${fib.fib(2)}`);
     console.log(`fib(20): ${fib.fib(20)}`);
     console.log(`fib(200): ${fib.fib(200)}`);
+    for (var i = 20; i < 200; i += 20) {
+        console.log(`fib_u64_saturating(${i}) = ${fib.fib_str(i)}`);
+    }
 
     console.log(`all numbers: ${fib.all(64)}`);
 }

@@ -97,7 +97,12 @@ pub enum SupportedArgumentType {
     IntegerVec(SupportedCopyTy),
     // u8, u16, u32, u64, i8, i16, i32, i64, usize, isize,
     Integer(SupportedCopyTy),
-    // TODO: more types
+    // String
+    OwnedString,
+    // String slice is not supported due to string always needing allocation
+    // to convert from JavaScript to rust.
+    // TODO: wtf-8 or utf16 type.
+    // TODO: more types, and more nesting.
 }
 
 fn resolve_parens(mut ty: &syn::Ty) -> &syn::Ty {
@@ -164,6 +169,32 @@ fn as_vec_simple_integer_type(ty: &syn::Ty) -> Option<SupportedCopyTy> {
     None
 }
 
+fn is_string_slice(ty: &syn::Ty) -> bool {
+    let ty = resolve_parens(ty);
+    if let syn::Ty::Rptr(_, ref str_ty_with_mut) = *ty {
+        if str_ty_with_mut.mutability == syn::Mutability::Immutable {
+            let should_be_str = resolve_parens(&str_ty_with_mut.ty);
+            if let Some(segment) = path_as_single_segment(should_be_str) {
+                if segment.ident == "str" && segment.parameters.is_empty() {
+                    return true;
+                }
+            }
+        }
+    }
+
+    false
+}
+
+fn is_owned_string(ty: &syn::Ty) -> bool {
+    if let Some(segment) = path_as_single_segment(ty) {
+        if segment.ident == "String" && segment.parameters.is_empty() {
+            return true;
+        }
+    }
+
+    false
+}
+
 impl SupportedArgumentType {
     pub fn new(ty: &syn::Ty) -> Result<Self, MacroError> {
         let ty = resolve_parens(ty);
@@ -189,6 +220,12 @@ impl SupportedArgumentType {
         if let Some(item_ty) = as_vec_simple_integer_type(ty) {
             return Ok(SupportedArgumentType::IntegerVec(item_ty));
         }
+        // if is_string_slice(ty) {
+        //     return Ok(SupportedArgumentType::StringSlice);
+        // }
+        if is_owned_string(ty) {
+            return Ok(SupportedArgumentType::OwnedString);
+        }
         Err(MacroError::UnhandledArgumentType { ty: ty.clone() })?
     }
 }
@@ -200,6 +237,10 @@ pub enum SupportedRetType {
     Integer(SupportedCopyTy),
     // ()
     Unit,
+    // &str
+    StringSlice,
+    // String
+    OwnedString,
 }
 
 
@@ -217,6 +258,12 @@ impl SupportedRetType {
                 return Ok(SupportedRetType::Unit);
             }
         }
+        if is_string_slice(ty) {
+            return Ok(SupportedRetType::StringSlice);
+        }
+        if is_owned_string(ty) {
+            return Ok(SupportedRetType::OwnedString);
+        }
         Err(MacroError::UnhandledRetType { ty: ty.clone() })?
     }
 
@@ -232,6 +279,9 @@ impl ToTokens for SupportedRetType {
             IntegerVec(int_ty) => tokens.append(quote! { Vec<#int_ty> }),
             Integer(int_ty) => int_ty.to_tokens(tokens),
             Unit => tokens.append("()"),
+            // TODO: handle reference lifetime
+            StringSlice => tokens.append("&str"),
+            OwnedString => tokens.append("String"),
         }
     }
 }

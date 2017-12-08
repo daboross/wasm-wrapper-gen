@@ -14,7 +14,8 @@ impl<'a> FuncStats<'a> {
             match *arg {
                 SupportedArgumentType::Integer(_) => {}
                 SupportedArgumentType::IntegerSliceRef(_)
-                | SupportedArgumentType::IntegerVec(_) => {
+                | SupportedArgumentType::IntegerVec(_)
+                | SupportedArgumentType::OwnedString => {
                     any_alloc = true;
                 }
                 SupportedArgumentType::IntegerSliceMutRef(_) => {
@@ -25,7 +26,9 @@ impl<'a> FuncStats<'a> {
         }
         match stats.ret_ty {
             SupportedRetType::Unit | SupportedRetType::Integer(_) => {}
-            SupportedRetType::IntegerVec(_) => {
+            SupportedRetType::IntegerVec(_)
+            | SupportedRetType::OwnedString
+            | SupportedRetType::StringSlice => {
                 any_alloc = true;
                 post_func_mem_access = true;
             }
