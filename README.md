@@ -3,9 +3,42 @@ wasm-wrapper-gen
 
 JavaScript wrapper generation for rust code targeting wasm32-unknown-unknown.
 
-This repository is currently very WIP, but there's a full working example Cargo project in `examples/simple_summation/`.
+I believe in "release early, release often", so `wasm-wrapper-gen` is available on crates.io as version 0.0.3.
+That said, the project is still a work in progress, and breaking changes are to be expected.
 
-General overview:
+---
+
+The main idea:
+
+```rust
+fn fib_str(nth: u32) -> String {
+    let mut last = 0;
+    let mut current = 1u64;
+    for _ in 0..(nth as u64) {
+        let temp = current + last;
+        last = current;
+        current = temp;
+    }
+    format!("fibonacci sequence #{}: {}", nth, current)
+}
+
+js_fn! {
+    fn fib_str(_: u32) -> String => fib_str;
+}
+```
+
+```js
+let module = new WebAssembly.Module(/*..*/);
+let fib = new Fibonacci(module);
+
+console.log(fib.fib_str(20));
+```
+
+There are multiple full example projects available in `examples/`, each which tests a different aspect of `wasm-wrapper-gen`. All of these should be directly copyable out of the repository as a starter if needed.
+
+---
+
+### Repository structure:
 
 `wasm-wrapper-gen` is composed of two interlocking parts:
 - `wasm-wrapper-gen` provides the `js_fn!()` macro which generates `extern "C"` functions
