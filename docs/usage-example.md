@@ -57,6 +57,10 @@ wasm-wrapper-gen = { version = "0.0.3", path = "../../" }
 
 [build-dependencies]
 wasm-wrapper-gen-build = { version = "0.0.3", path = "../../wasm-wrapper-gen-build/" }
+
+# optimize for size
+[profile.release]
+opt-level = 'z'
 ```
 
 And finally, usage from within node.js:

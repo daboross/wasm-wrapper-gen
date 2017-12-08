@@ -111,7 +111,6 @@ fn generate_function_wrapper(
     }
 
     function_body.append(quote! {
-        // TODO: handle results as well...
         let result: #ret_ty = (#callable_body)(#arg_names_as_argument_list);
     });
 
@@ -135,13 +134,6 @@ fn generate_function_wrapper(
     };
 
     Ok(full_definition)
-    // let temp_ident = &item.ident;
-    // let temp_str = full_definition.to_string();
-    // Ok(quote! {
-    //     fn #temp_ident() -> &'static str {
-    //         #temp_str
-    //     }
-    // })
 }
 
 fn expand_argument_into(
@@ -220,7 +212,7 @@ fn setup_for_argument(
             let length_arg_name = arg_name.with_suffix("_len");
             quote! {
                 let #arg_name: Vec<#int_ty> = unsafe {
-                    ::std::vec::Vec::from_raw_parts(#ptr_arg_name,
+                    ::std::vec::Vec::<#int_ty>::from_raw_parts(#ptr_arg_name,
                         #length_arg_name, #length_arg_name)
                 };
             }

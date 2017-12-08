@@ -135,20 +135,27 @@ fn as_simple_integer(ty: &syn::Ty) -> Option<SupportedCopyTy> {
     None
 }
 
+fn path_as_single_segment(ty: &syn::Ty) -> Option<&syn::PathSegment> {
+    let ty = resolve_parens(ty);
+    match *ty {
+        syn::Ty::Path(None, ref path) => match (path.segments.len(), path.segments.first()) {
+            (1, Some(segment)) => Some(segment),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
 fn as_vec_simple_integer_type(ty: &syn::Ty) -> Option<SupportedCopyTy> {
     let ty = resolve_parens(ty);
-    if let syn::Ty::Path(None, ref path) = *ty {
-        if path.segments.len() <= 1 {
-            if let Some(segment) = path.segments.first() {
-                if segment.ident == "Vec" {
-                    if let syn::PathParameters::AngleBracketed(ref params) = segment.parameters {
-                        if params.lifetimes.is_empty() && params.bindings.is_empty()
-                            && params.types.len() == 1
-                        {
-                            if let Some(single_param_type) = params.types.first() {
-                                return as_simple_integer(single_param_type);
-                            }
-                        }
+    if let Some(segment) = path_as_single_segment(ty) {
+        if segment.ident == "Vec" {
+            if let syn::PathParameters::AngleBracketed(ref params) = segment.parameters {
+                if params.lifetimes.is_empty() && params.bindings.is_empty()
+                    && params.types.len() == 1
+                {
+                    if let Some(single_param_type) = params.types.first() {
+                        return as_simple_integer(single_param_type);
                     }
                 }
             }
